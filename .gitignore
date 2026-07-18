@@ -1,0 +1,17 @@
+# Ambiente virtual (recriável a partir do requirements.txt — não vai pro git)
+venv/
+.venv/
+
+# Segredos: chaves de API, tokens. NUNCA versionar.
+.env
+
+# Cache do Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Arquivos de IDE / sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

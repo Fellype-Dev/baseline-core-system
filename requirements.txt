@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+PyGithub
+google-generativeai
+python-dotenv
