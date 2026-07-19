@@ -35,3 +35,18 @@ class RegraArquitetural:
 
     identificador: str  # de onde a regra veio no SDD (ex.: "secao-3.2")
     conteudo: str       # o texto da regra, em linguagem natural
+
+
+@dataclass(frozen=True)
+class ElementoDeCodigo:
+    """Um elemento estrutural extraído de um arquivo via AST.
+
+    É o "esqueleto lógico" que o sistema usa no lugar do texto cru: representa
+    uma função, classe ou método, sem os detalhes de formatação do código.
+    """
+
+    tipo: str          # "funcao", "classe" ou "metodo"
+    nome: str          # nome qualificado, ex.: "Calculadora.somar"
+    assinatura: str    # a linha de declaração, ex.: "def somar(self, a, b)"
+    linha_inicio: int  # primeira linha do elemento no arquivo
+    linha_fim: int     # última linha do elemento no arquivo
