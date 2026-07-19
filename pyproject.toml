@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# Onde os testes ficam.
+testpaths = ["tests"]
+# Inclui a raiz do projeto no caminho de imports, para que os testes possam
+# fazer "from app.core... import ...".
+pythonpath = ["."]
