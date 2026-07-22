@@ -12,7 +12,12 @@ a arquitetura hexagonal foi quebrada.
 
 from abc import ABC, abstractmethod
 
-from app.core.models import ArquivoAlterado, PullRequest, RegraArquitetural
+from app.core.models import (
+    ArquivoAlterado,
+    ConsultaDeRegras,
+    PullRequest,
+    RegraArquitetural,
+)
 
 
 class RepositorioPort(ABC):
@@ -43,8 +48,15 @@ class ConhecimentoPort(ABC):
     """
 
     @abstractmethod
-    def buscar_regras_relevantes(self, codigo: str) -> list[RegraArquitetural]:
-        """Retorna as regras do SDD mais relevantes para o trecho de código dado."""
+    def buscar_regras_relevantes(
+        self, consulta: ConsultaDeRegras
+    ) -> list[RegraArquitetural]:
+        """Retorna as regras APLICÁVEIS ao arquivo e relevantes para o código.
+
+        "Aplicável" faz parte do contrato: cabe ao adaptador descartar regras de
+        outra linguagem ou fora do escopo de caminho declarado no SDD, para que
+        o núcleo nunca receba uma regra que não deveria ser cobrada ali.
+        """
         ...
 
 

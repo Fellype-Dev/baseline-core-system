@@ -11,7 +11,7 @@ Rodar apenas estes:        pytest -m integracao
 import pytest
 
 from app.adapters.qdrant_adapter import QdrantAdapter
-from app.core.models import RegraArquitetural
+from app.core.models import ConsultaDeRegras, RegraArquitetural
 from app.core.ports import ConhecimentoPort
 
 REGRAS = [
@@ -88,7 +88,11 @@ def test_adaptador_satisfaz_o_contrato(adaptador):
 def test_busca_encontra_regra_sobre_segredos(adaptador):
     # A consulta não repete as palavras da regra: a correspondência é semântica.
     resultado = adaptador.buscar_regras_relevantes(
-        "o token de acesso está escrito direto no arquivo python"
+        ConsultaDeRegras(
+            texto="o token de acesso está escrito direto no arquivo python",
+            caminho="app/main.py",
+            linguagem="python",
+        )
     )
     assert resultado[0].identificador == "SEG-001"
 
@@ -96,14 +100,50 @@ def test_busca_encontra_regra_sobre_segredos(adaptador):
 @pytest.mark.integracao
 def test_busca_encontra_regra_sobre_adaptadores(adaptador):
     resultado = adaptador.buscar_regras_relevantes(
-        "um adaptador está tomando decisões de negócio em vez de só traduzir dados"
+        ConsultaDeRegras(
+            texto="um adaptador está tomando decisões de negócio em vez de traduzir",
+            caminho="app/adapters/github_adapter.py",
+            linguagem="python",
+        )
     )
     assert resultado[0].identificador == "ARQ-003"
 
 
 @pytest.mark.integracao
+def test_filtro_descarta_regra_fora_do_escopo_do_arquivo(adaptador):
+    """A mesma consulta, em caminho fora do escopo, não deve trazer a regra.
+
+    ARQ-003 vale apenas para "app/adapters/**". Consultando um arquivo do
+    núcleo, ela precisa ser descartada — é assim que se evitam falsos positivos.
+    """
+    resultado = adaptador.buscar_regras_relevantes(
+        ConsultaDeRegras(
+            texto="um adaptador está tomando decisões de negócio em vez de traduzir",
+            caminho="app/core/pipeline.py",
+            linguagem="python",
+        )
+    )
+    assert "ARQ-003" not in {regra.identificador for regra in resultado}
+
+
+@pytest.mark.integracao
+def test_filtro_descarta_regras_de_outra_linguagem(adaptador):
+    resultado = adaptador.buscar_regras_relevantes(
+        ConsultaDeRegras(
+            texto="qualquer texto",
+            caminho="docs/manual.md",
+            linguagem="markdown",
+        )
+    )
+    # Todas as regras de teste declaram linguagem "python".
+    assert resultado == []
+
+
+@pytest.mark.integracao
 def test_busca_respeita_o_limite_de_resultados(adaptador):
-    resultado = adaptador.buscar_regras_relevantes("qualquer texto")
+    resultado = adaptador.buscar_regras_relevantes(
+        ConsultaDeRegras(texto="qualquer texto", caminho="app/x.py", linguagem="python")
+    )
     # O adaptador foi configurado para devolver no máximo 3 regras.
     assert len(resultado) <= 3
 
@@ -112,6 +152,9 @@ def test_busca_respeita_o_limite_de_resultados(adaptador):
 def test_busca_sem_colecao_indexada_devolve_lista_vazia(tmp_path):
     vazio = QdrantAdapter(caminho_dados=str(tmp_path / "sem_indice"))
     try:
-        assert vazio.buscar_regras_relevantes("qualquer coisa") == []
+        consulta = ConsultaDeRegras(
+            texto="qualquer coisa", caminho="app/x.py", linguagem="python"
+        )
+        assert vazio.buscar_regras_relevantes(consulta) == []
     finally:
         vazio.fechar()
