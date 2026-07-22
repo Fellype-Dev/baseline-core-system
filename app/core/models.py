@@ -31,10 +31,31 @@ class ArquivoAlterado:
 
 @dataclass(frozen=True)
 class RegraArquitetural:
-    """Uma regra do documento SDD, recuperada como relevante para um trecho de código."""
+    """Uma regra do documento SDD da organização.
 
-    identificador: str  # de onde a regra veio no SDD (ex.: "secao-3.2")
-    conteudo: str       # o texto da regra, em linguagem natural
+    Cada campo existe para entregar uma capacidade concreta ao sistema:
+    o identificador dá rastreabilidade ao feedback ("viola ARQ-001"); a
+    motivação torna o comentário didático; `linguagens` e `aplica_se_a`
+    permitem descartar regras inaplicáveis, reduzindo falsos positivos; e os
+    exemplos servem de referência para o modelo de linguagem.
+
+    Coleções são tuplas (e não listas) para preservar a imutabilidade.
+    """
+
+    identificador: str   # ex.: "ARQ-001"
+    titulo: str          # enunciado curto da regra
+    categoria: str       # ex.: "arquitetura" (declarada no sdd.config.yml)
+    severidade: str      # ex.: "obrigatoria" (declarada no sdd.config.yml)
+    regra: str           # o enunciado normativo completo
+    motivacao: str       # por que a regra existe — alimenta o feedback didático
+
+    linguagens: tuple[str, ...] = ()   # a quais linguagens se aplica
+    aplica_se_a: tuple[str, ...] = ()  # padrões de caminho (glob) onde vale
+    excecoes: tuple[str, ...] = ()     # padrões de caminho isentos
+    status: str = "ativa"              # "ativa" ou "descontinuada"
+    como_identificar: str = ""         # sinais estruturais observáveis
+    exemplo_incorreto: str = ""        # trecho que viola a regra
+    exemplo_correto: str = ""          # trecho equivalente em conformidade
 
 
 @dataclass(frozen=True)

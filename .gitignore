@@ -9,6 +9,13 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+
+# Dados gerados: banco vetorial embarcado e cache do modelo de embeddings.
+# São recriáveis a partir do SDD — não versionar.
+dados_qdrant/
+.fastembed_cache/
+local_cache/
 
 # Arquivos de IDE / sistema operacional
 .vscode/

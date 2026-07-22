@@ -4,6 +4,13 @@ PyGithub
 google-generativeai
 python-dotenv
 
+# RAG: banco vetorial embarcado + embeddings locais
+qdrant-client
+fastembed
+
+# Leitura do frontmatter YAML das regras do SDD
+PyYAML
+
 # Testes
 httpx
 pytest

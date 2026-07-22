@@ -1,0 +1,28 @@
+# Configuração do documento SDD desta organização.
+#
+# Este arquivo declara o VOCABULÁRIO que as regras podem usar. Cada empresa
+# ajusta as suas categorias e severidades sem alterar a ferramenta — é o que
+# torna o modelo de SDD genérico.
+#
+# As regras em sdd/regras/ são validadas contra estas listas: uma categoria ou
+# severidade não declarada aqui é rejeitada na leitura (evita erros de digitação
+# e mantém a taxonomia consistente).
+
+versao: 1
+
+# Linguagens que a ferramenta analisa. Nesta fase, apenas Python.
+linguagens_suportadas:
+  - python
+
+# Categorias de regra usadas por esta organização.
+categorias:
+  - arquitetura
+  - seguranca
+  - qualidade
+  - documentacao
+  - testes
+
+# Níveis de severidade, do mais forte para o mais fraco.
+severidades:
+  - obrigatoria
+  - recomendada

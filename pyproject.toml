@@ -4,3 +4,7 @@ testpaths = ["tests"]
 # Inclui a raiz do projeto no caminho de imports, para que os testes possam
 # fazer "from app.core... import ...".
 pythonpath = ["."]
+# Marcadores personalizados.
+markers = [
+    "integracao: testes que dependem de recursos pesados (modelo de embeddings, banco vetorial)",
+]
