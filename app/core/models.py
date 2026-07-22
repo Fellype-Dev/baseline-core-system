@@ -59,6 +59,20 @@ class RegraArquitetural:
 
 
 @dataclass(frozen=True)
+class ConsultaDeRegras:
+    """O contexto de uma busca por regras no SDD.
+
+    Agrupar os dados num objeto, em vez de passar parâmetros soltos, permite
+    acrescentar contexto no futuro (autor do PR, categoria desejada) sem
+    alterar a assinatura da porta e sem quebrar os adaptadores existentes.
+    """
+
+    texto: str       # descrição do que mudou, usada na busca semântica
+    caminho: str     # arquivo alterado, ex.: "app/core/pipeline.py"
+    linguagem: str   # ex.: "python"
+
+
+@dataclass(frozen=True)
 class ElementoDeCodigo:
     """Um elemento estrutural extraído de um arquivo via AST.
 

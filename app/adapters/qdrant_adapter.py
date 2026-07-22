@@ -18,7 +18,8 @@ from dataclasses import asdict
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient, models
 
-from app.core.models import RegraArquitetural
+from app.core.aplicabilidade import regra_se_aplica
+from app.core.models import ConsultaDeRegras, RegraArquitetural
 from app.core.ports import ConhecimentoPort
 
 # Modelo multilíngue: o SDD é escrito em português, então um modelo só-inglês
@@ -28,6 +29,11 @@ MODELO_PADRAO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 class QdrantAdapter(ConhecimentoPort):
     """Recupera regras do SDD por similaridade semântica usando Qdrant + embeddings."""
+
+    # Quantas candidatas buscar por vaga desejada. Como o filtro de
+    # aplicabilidade descarta parte dos resultados, buscar apenas a quantidade
+    # final devolveria menos regras do que o pedido.
+    _FATOR_DE_SOBREBUSCA = 4
 
     def __init__(
         self,
@@ -87,20 +93,36 @@ class QdrantAdapter(ConhecimentoPort):
     # ------------------------------------------------------------------
     # Implementação do contrato ConhecimentoPort.
     # ------------------------------------------------------------------
-    def buscar_regras_relevantes(self, codigo: str) -> list[RegraArquitetural]:
-        """Retorna as regras do SDD semanticamente mais próximas do texto dado (C5)."""
+    def buscar_regras_relevantes(
+        self, consulta: ConsultaDeRegras
+    ) -> list[RegraArquitetural]:
+        """Retorna as regras aplicáveis ao arquivo e relevantes para o código (C5).
+
+        São duas etapas: a busca semântica traz as candidatas mais próximas, e o
+        filtro de aplicabilidade descarta as que não valem para aquele arquivo
+        (outra linguagem ou fora do escopo de caminho declarado no SDD).
+        """
         if not self._cliente.collection_exists(self._colecao):
             return []
 
-        vetor_consulta = next(iter(self._modelo.embed([codigo]))).tolist()
+        vetor_consulta = next(iter(self._modelo.embed([consulta.texto]))).tolist()
 
+        # Busca mais candidatas do que o necessário, porque parte delas será
+        # descartada pelo filtro de aplicabilidade logo abaixo.
         resposta = self._cliente.query_points(
             collection_name=self._colecao,
             query=vetor_consulta,
-            limit=self._quantidade,
+            limit=self._quantidade * self._FATOR_DE_SOBREBUSCA,
         )
 
-        return [self._regra_do_payload(ponto.payload) for ponto in resposta.points]
+        aplicaveis = [
+            regra
+            for regra in (
+                self._regra_do_payload(ponto.payload) for ponto in resposta.points
+            )
+            if regra_se_aplica(regra, consulta)
+        ]
+        return aplicaveis[: self._quantidade]
 
     @staticmethod
     def _regra_do_payload(payload: dict) -> RegraArquitetural:
