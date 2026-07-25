@@ -25,12 +25,24 @@ falha estrutural: um arquivo Python que não parseia cai para a revisão baseada
 apenas no diff, em vez de derrubar a revisão inteira.
 """
 
+import logging
+
 from app.core.models import ArquivoAlterado, ConsultaDeRegras, PullRequest
 from app.core.ports import ConhecimentoPort, LLMPort, RepositorioPort
 from app.services.ast_service import elementos_alterados, identificar_linguagem
 from app.services.diff_service import linhas_alteradas
 from app.services.prompt_service import montar_prompt
 from app.services.resultado_service import montar_comentario_de_avaliacao
+
+_log = logging.getLogger(__name__)
+
+# Bloco honesto usado quando o modelo não pôde avaliar um arquivo. Igual à
+# filosofia do resultado_service: nunca inventar um veredito — admitir a falha.
+_MODELO_INDISPONIVEL = (
+    "## ⚠️ Revisão arquitetural indisponível para este arquivo\n\n"
+    "O modelo de linguagem não pôde ser consultado desta vez. Um revisor "
+    "humano deve avaliar as alterações deste arquivo."
+)
 
 
 def revisar_pull_request(
@@ -95,7 +107,15 @@ def _revisar_arquivo(
         return None
 
     prompt = montar_prompt(arquivo, elementos, regras)
-    resposta = llm.avaliar(prompt)
+    try:
+        resposta = llm.avaliar(prompt)
+    except Exception:
+        # Resiliência (E2): a falha de um arquivo não pode derrubar o PR inteiro.
+        # Não silenciamos (QUA-001): registramos o erro com stacktrace no log e
+        # devolvemos um bloco honesto no lugar do veredito.
+        _log.exception("Falha ao avaliar %s com o modelo.", arquivo.caminho)
+        return _MODELO_INDISPONIVEL
+
     return montar_comentario_de_avaliacao(resposta)
 
 

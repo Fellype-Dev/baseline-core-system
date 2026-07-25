@@ -154,6 +154,37 @@ def test_arquivo_python_invalido_nao_derruba_a_revisao():
     assert "SEG-001" in comentario
 
 
+class LLMQueFalha:
+    """Simula uma falha de rede/timeout na chamada ao modelo."""
+
+    def avaliar(self, prompt):
+        raise RuntimeError("timeout ao chamar a API")
+
+
+def test_falha_do_modelo_nao_derruba_a_revisao():
+    repo = RepositorioFalso([ARQUIVO_PY])
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1), repo, ConhecimentoFalso([REGRA_SEG]), LLMQueFalha()
+    )
+    # Em vez de propagar a exceção, produz um bloco honesto de indisponibilidade.
+    assert "indisponível" in comentario
+    assert "revisor humano" in comentario
+
+
+def test_falha_em_um_arquivo_nao_impede_os_demais():
+    # Dois arquivos; o modelo falha para ambos, mas cada um vira um bloco — a
+    # revisão do PR como um todo continua produzindo comentário.
+    outro = ArquivoAlterado(
+        caminho="app/outro.py", diff="@@ -1 +1 @@\n+x = 1", conteudo="x = 1\n"
+    )
+    repo = RepositorioFalso([ARQUIVO_PY, outro])
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1), repo, ConhecimentoFalso([REGRA_SEG]), LLMQueFalha()
+    )
+    assert "app/core/config.py" in comentario
+    assert "app/outro.py" in comentario
+
+
 def test_arquivo_nao_python_e_revisado_pelo_diff():
     arquivo = ArquivoAlterado(
         caminho="docs/manual.md",

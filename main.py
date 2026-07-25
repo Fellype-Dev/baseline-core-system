@@ -10,6 +10,8 @@ Estado atual: "esqueleto ambulante" (walking skeleton). Recebe o webhook, busca
 os arquivos do PR e posta um comentário de teste — ainda sem AST/RAG/LLM.
 """
 
+import logging
+
 import uvicorn
 from fastapi import FastAPI
 
@@ -20,6 +22,10 @@ from app.adapters.qdrant_adapter import QdrantAdapter
 from app.api.webhook import criar_router_webhook
 from app.core.models import PullRequest
 from app.core.pipeline import revisar_pull_request
+
+# Observabilidade mínima (F2): sem isto, os logs do pipeline (ex.: falha do
+# modelo, registrada com _log.exception) não apareceriam no console do servidor.
+logging.basicConfig(level=logging.INFO)
 
 # Falha cedo, com mensagem clara, se as chaves não estiverem no .env.
 config.validar_configuracao()
@@ -48,8 +54,16 @@ def ao_receber_pull_request(pr: PullRequest) -> None:
     (resiliência).
     """
     print(f"Processando PR #{pr.numero} em {pr.repositorio}...")
-    revisar_pull_request(pr, repositorio, conhecimento, llm)
-    print("  Revisão publicada no PR.")
+    try:
+        revisar_pull_request(pr, repositorio, conhecimento, llm)
+        print("  Revisão publicada no PR.")
+    except Exception:
+        # Esta função roda em segundo plano (BackgroundTasks): uma exceção aqui
+        # não tem para onde propagar e sumiria sem rastro. Registramos com
+        # stacktrace para não silenciar a falha (QUA-001).
+        logging.getLogger(__name__).exception(
+            "Falha ao revisar o PR #%s de %s.", pr.numero, pr.repositorio
+        )
 
 
 # --- Aplicação web ---
