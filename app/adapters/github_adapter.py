@@ -27,6 +27,8 @@ class GitHubAdapter(RepositorioPort):
         """Busca no GitHub os arquivos alterados e os traduz para o domínio."""
         repositorio = self._cliente.get_repo(pr.repositorio)
         pull_request = repositorio.get_pull(pr.numero)
+        # A versão a analisar é o "head" do PR: o estado proposto pelas mudanças.
+        sha_do_pr = pull_request.head.sha
 
         arquivos: list[ArquivoAlterado] = []
         for arquivo_github in pull_request.get_files():
@@ -39,9 +41,27 @@ class GitHubAdapter(RepositorioPort):
                 ArquivoAlterado(
                     caminho=arquivo_github.filename,
                     diff=arquivo_github.patch,
+                    conteudo=self._obter_conteudo(
+                        repositorio, arquivo_github, sha_do_pr
+                    ),
                 )
             )
         return arquivos
+
+    def _obter_conteudo(self, repositorio, arquivo_github, ref: str) -> str:
+        """Lê o conteúdo completo do arquivo na versão `ref` do repositório.
+
+        A AST precisa do arquivo inteiro (não só do diff) para montar o esqueleto
+        lógico. Arquivos removidos não existem mais nessa versão — para eles não
+        há corpo a analisar, então devolvemos texto vazio; a revisão desses casos
+        se apoia apenas no diff.
+        """
+        if arquivo_github.status == "removed":
+            return ""
+
+        conteudo = repositorio.get_contents(arquivo_github.filename, ref=ref)
+        # get_contents devolve bytes já decodificados do base64 da API.
+        return conteudo.decoded_content.decode("utf-8")
 
     def publicar_comentario(self, pr: PullRequest, texto: str) -> None:
         """Publica o texto do feedback como um comentário no Pull Request."""

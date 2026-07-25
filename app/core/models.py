@@ -23,10 +23,18 @@ class PullRequest:
 
 @dataclass(frozen=True)
 class ArquivoAlterado:
-    """Um arquivo modificado dentro de um Pull Request."""
+    """Um arquivo modificado dentro de um Pull Request.
 
-    caminho: str  # caminho no repositório, ex.: "app/core/pipeline.py"
-    diff: str     # o trecho alterado (patch), no formato de diff do git
+    Guarda tanto o `diff` (o que mudou) quanto o `conteudo` completo do arquivo
+    na versão do PR. Os dois se complementam: o diff diz QUAIS linhas mudaram,
+    mas a análise via AST precisa do arquivo INTEIRO para montar o esqueleto
+    lógico e então cruzar com as linhas do diff. `conteudo` tem valor padrão
+    vazio para os casos em que não há corpo a analisar (ex.: arquivo removido).
+    """
+
+    caminho: str        # caminho no repositório, ex.: "app/core/pipeline.py"
+    diff: str           # o trecho alterado (patch), no formato de diff do git
+    conteudo: str = ""  # o arquivo completo na versão do PR (para a AST)
 
 
 @dataclass(frozen=True)

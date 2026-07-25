@@ -12,7 +12,7 @@ root, o main.py). Assim o adaptador de entrada permanece desacoplado do miolo.
 
 from collections.abc import Callable
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 
 from app.core.models import PullRequest
 
@@ -26,7 +26,9 @@ def criar_router_webhook(ao_receber_pr: AoReceberPullRequest) -> APIRouter:
     router = APIRouter()
 
     @router.post("/webhook")
-    async def receber_evento_github(request: Request) -> dict:
+    async def receber_evento_github(
+        request: Request, tarefas: BackgroundTasks
+    ) -> dict:
         payload = await request.json()
 
         # O GitHub envia muitos tipos de evento pelo mesmo endereço.
@@ -36,10 +38,11 @@ def criar_router_webhook(ao_receber_pr: AoReceberPullRequest) -> APIRouter:
                 repositorio=payload["repository"]["full_name"],
                 numero=payload["pull_request"]["number"],
             )
-            ao_receber_pr(pr)
+            # Resiliência (E2): a revisão (AST + RAG + LLM) pode levar segundos.
+            # O GitHub considera o webhook falho se a resposta demorar, então
+            # agendamos o trabalho para DEPOIS da resposta e devolvemos 200 já.
+            tarefas.add_task(ao_receber_pr, pr)
 
-        # Responder rápido com 200 é importante: o GitHub espera a confirmação
-        # de recebimento e considera o webhook falho se demorar demais.
         return {"status": "recebido"}
 
     return router
