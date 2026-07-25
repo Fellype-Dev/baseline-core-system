@@ -14,8 +14,16 @@ load_dotenv()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Modelo do Gemini usado na revisão. Centralizado aqui para troca fácil depois.
+# Modelo do Gemini. Mantido apenas para comparação experimental: o Gemini serviu
+# de andaime durante a construção e não é mais o motor do sistema.
 GEMINI_MODEL = "gemini-2.5-flash"
+
+# Modelo de linguagem aberto executado localmente — o motor de verificação do
+# sistema. Trocar de modelo (ou de executor) é mudar estes dois valores.
+LLM_LOCAL_MODELO = os.getenv("LLM_LOCAL_MODELO", "qwen2.5-coder:14b")
+LLM_LOCAL_URL = os.getenv(
+    "LLM_LOCAL_URL", "http://localhost:11434/v1/chat/completions"
+)
 
 
 def validar_configuracao() -> None:
@@ -23,12 +31,14 @@ def validar_configuracao() -> None:
 
     Chamada na inicialização para falhar cedo, com uma mensagem clara,
     em vez de dar um erro confuso mais adiante na execução.
+
+    A chave do Gemini NÃO é obrigatória: o sistema roda com o modelo local, e a
+    chave só é necessária para reproduzir a comparação experimental entre os
+    dois modelos.
     """
     faltando = []
     if not GITHUB_TOKEN or GITHUB_TOKEN.startswith("cole_"):
         faltando.append("GITHUB_TOKEN")
-    if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("cole_"):
-        faltando.append("GEMINI_API_KEY")
 
     if faltando:
         raise RuntimeError(

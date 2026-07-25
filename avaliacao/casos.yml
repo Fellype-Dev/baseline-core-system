@@ -1,0 +1,239 @@
+# Corpus de avaliação — o GABARITO da ferramenta.
+#
+# Cada caso descreve um arquivo como ele chegaria em um Pull Request, junto das
+# violações que a ferramenta DEVERIA apontar nele. É este arquivo que sustenta
+# os números do capítulo de Resultados: se o gabarito estiver errado, a métrica
+# mede a coisa errada.
+#
+# Campos de cada caso:
+#   nome      identificador curto do caso
+#   caminho   caminho SIMULADO no repositório. Importa: é ele que decide quais
+#             regras se aplicam (os globs `aplica_se_a` do SDD).
+#   esperado  lista de identificadores de regra que devem ser apontados.
+#             Lista VAZIA significa código em conformidade — nenhum apontamento
+#             é esperado, e qualquer apontamento conta como falso positivo.
+#   codigo    o conteúdo do arquivo.
+#
+# O diff é gerado automaticamente pelo executor, tratando o arquivo como recém
+# adicionado ao PR (todas as linhas marcadas como incluídas). Isso evita que um
+# diff escrito à mão vire mais uma fonte de erro na medição.
+#
+# Casos em conformidade são deliberadamente ~40% do corpus: sem eles, a precisão
+# ficaria inflada artificialmente e a QP7 ("mitigação de falsos positivos") não
+# teria como ser respondida.
+
+casos:
+  # ------------------------------------------------------------------
+  # Casos com violação
+  # ------------------------------------------------------------------
+
+  # Correção do corpus (2ª rodada): a primeira versão deste caso instanciava o
+  # adaptador com `GeminiAdapter(api_key="chave")`. Aquele literal atribuído a
+  # `api_key` fazia o caso violar TAMBÉM a SEG-001, sem que o gabarito
+  # declarasse isso — a ferramenta apontava a segunda violação e era penalizada
+  # por estar certa. Um caso deve isolar a regra que pretende exercitar; a
+  # instanciação sem argumentos preserva a violação de ARQ-001 (o núcleo
+  # importando um adaptador) e remove o ruído.
+  - nome: nucleo_importa_adaptador
+    caminho: app/core/pipeline.py
+    esperado: [ARQ-001]
+    codigo: |
+      from app.adapters.gemini_adapter import GeminiAdapter
+
+
+      class PipelineDeRevisao:
+          def __init__(self):
+              self.llm = GeminiAdapter()
+
+          def revisar(self, codigo: str) -> str:
+              return self.llm.avaliar(codigo)
+
+  - nome: porta_nomeada_por_tecnologia
+    caminho: app/core/ports.py
+    esperado: [ARQ-002]
+    codigo: |
+      from abc import ABC, abstractmethod
+
+
+      class QdrantPort(ABC):
+          @abstractmethod
+          def buscar_por_vetor(self, embedding: list[float]) -> list[dict]:
+              ...
+
+          @abstractmethod
+          def upsert_colecao(self, nome: str, pontos: list[dict]) -> None:
+              ...
+
+  - nome: adaptador_com_regra_de_negocio
+    caminho: app/adapters/llm_adapter.py
+    esperado: [ARQ-003]
+    codigo: |
+      class LLMAdapter:
+          def __init__(self, cliente):
+              self._cliente = cliente
+
+          def avaliar(self, codigo: str) -> str:
+              prompt = f"Revise este codigo seguindo as regras da empresa: {codigo}"
+              if len(codigo) > 1000:
+                  prompt += " Seja breve na resposta."
+              if "senha" in codigo:
+                  prompt += " Priorize questoes de seguranca."
+              return self._cliente.gerar(prompt)
+
+  - nome: segredo_no_codigo
+    caminho: app/servicos/conexao.py
+    esperado: [SEG-001]
+    codigo: |
+      import requests
+
+      API_KEY = "sk-live-9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"
+
+
+      def consultar(recurso: str) -> dict:
+          resposta = requests.get(
+              f"https://api.exemplo.com/{recurso}",
+              headers={"Authorization": f"Bearer {API_KEY}"},
+          )
+          return resposta.json()
+
+  - nome: excecao_silenciada
+    caminho: app/servicos/publicador.py
+    esperado: [QUA-001]
+    codigo: |
+      def publicar(cliente, destino: str, texto: str) -> None:
+          try:
+              cliente.enviar(destino, texto)
+          except Exception:
+              pass
+
+
+      def publicar_varios(cliente, destinos: list, texto: str) -> None:
+          for destino in destinos:
+              publicar(cliente, destino, texto)
+
+  - nome: ano_fixo_em_titulo
+    caminho: app/relatorios/titulos.py
+    esperado: [DOC-001]
+    codigo: |
+      TITULO_DO_RELATORIO = "Relatorio de Conformidade 2025"
+      SUBTITULO = "Guia do Usuario 2025"
+
+
+      def cabecalho() -> str:
+          return f"{TITULO_DO_RELATORIO} - {SUBTITULO}"
+
+  - nome: segredo_e_excecao_silenciada
+    caminho: app/servicos/integracao.py
+    esperado: [SEG-001, QUA-001]
+    codigo: |
+      import requests
+
+      TOKEN_DE_ACESSO = "ghp_exemplo1234567890abcdefghijklmnop"
+
+
+      def sincronizar(recurso: str) -> dict | None:
+          try:
+              resposta = requests.post(
+                  f"https://api.exemplo.com/{recurso}",
+                  headers={"Authorization": f"token {TOKEN_DE_ACESSO}"},
+              )
+              return resposta.json()
+          except Exception:
+              pass
+
+  # ------------------------------------------------------------------
+  # Casos em conformidade — medem falsos positivos (QP7)
+  # ------------------------------------------------------------------
+
+  - nome: nucleo_limpo
+    caminho: app/core/models.py
+    esperado: []
+    codigo: |
+      from dataclasses import dataclass
+
+
+      @dataclass(frozen=True)
+      class PullRequest:
+          repositorio: str
+          numero: int
+
+
+      @dataclass(frozen=True)
+      class ArquivoAlterado:
+          caminho: str
+          diff: str
+          conteudo: str = ""
+
+  - nome: porta_bem_nomeada
+    caminho: app/core/ports.py
+    esperado: []
+    codigo: |
+      from abc import ABC, abstractmethod
+
+      from app.core.models import RegraArquitetural
+
+
+      class ConhecimentoPort(ABC):
+          @abstractmethod
+          def buscar_regras_relevantes(self, consulta) -> list[RegraArquitetural]:
+              ...
+
+  - nome: adaptador_limpo
+    caminho: app/adapters/github_adapter.py
+    esperado: []
+    codigo: |
+      import os
+
+      from github import Auth, Github
+
+      from app.core.models import ArquivoAlterado
+
+
+      class GitHubAdapter:
+          def __init__(self) -> None:
+              self._cliente = Github(auth=Auth.Token(os.getenv("GITHUB_TOKEN")))
+
+          def obter_arquivos(self, repositorio: str, numero: int) -> list:
+              pull = self._cliente.get_repo(repositorio).get_pull(numero)
+              return [
+                  ArquivoAlterado(caminho=item.filename, diff=item.patch)
+                  for item in pull.get_files()
+                  if item.patch
+              ]
+
+  - nome: servico_limpo
+    caminho: app/servicos/calculo.py
+    esperado: []
+    codigo: |
+      import logging
+
+      _log = logging.getLogger(__name__)
+
+
+      def media(valores: list[float]) -> float:
+          if not valores:
+              raise ValueError("a lista de valores nao pode estar vazia")
+          return sum(valores) / len(valores)
+
+
+      def media_segura(valores: list[float]) -> float | None:
+          try:
+              return media(valores)
+          except ValueError as erro:
+              _log.warning("Nao foi possivel calcular a media: %s", erro)
+              return None
+
+  # Este caso existe para verificar o mecanismo de EXCEÇÕES do SDD: a regra
+  # SEG-001 declara `excecoes: ["tests/**"]`, então um token de mentira dentro
+  # de um teste NÃO deve ser apontado. É um falso positivo clássico que a
+  # ferramenta precisa evitar por construção, não por sorte do modelo.
+  - nome: segredo_em_teste_isento
+    caminho: tests/test_conexao.py
+    esperado: []
+    codigo: |
+      from app.servicos.conexao import consultar
+
+
+      def test_consultar_usa_o_token():
+          token_falso = "sk-teste-0000000000000000"
+          assert consultar("recurso", token=token_falso) is not None

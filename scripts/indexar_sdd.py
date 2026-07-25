@@ -23,7 +23,9 @@ SDD_PADRAO = os.path.join(RAIZ, "sdd")
 
 
 def principal() -> None:
-    caminho_sdd = sys.argv[1] if len(sys.argv) > 1 else SDD_PADRAO
+    argumentos = [a for a in sys.argv[1:] if not a.startswith("--")]
+    com_exemplos = "--com-exemplos" in sys.argv[1:]
+    caminho_sdd = argumentos[0] if argumentos else SDD_PADRAO
 
     print(f"Lendo SDD: {caminho_sdd}")
     regras = carregar_sdd(caminho_sdd)
@@ -31,8 +33,9 @@ def principal() -> None:
     for regra in regras:
         print(f"  [{regra.severidade:12}] {regra.identificador} - {regra.titulo}")
 
-    print("\nGerando embeddings e indexando no Qdrant...")
-    adaptador = QdrantAdapter()
+    embutido = "COM exemplos de codigo" if com_exemplos else "SO linguagem natural"
+    print(f"\nGerando embeddings ({embutido}) e indexando no Qdrant...")
+    adaptador = QdrantAdapter(indexar_exemplos=com_exemplos)
     try:
         adaptador.indexar_regras(regras)
         print("Indexacao concluida.")

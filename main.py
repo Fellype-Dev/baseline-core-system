@@ -16,8 +16,8 @@ import uvicorn
 from fastapi import FastAPI
 
 import config
-from app.adapters.gemini_adapter import GeminiAdapter
 from app.adapters.github_adapter import GitHubAdapter
+from app.adapters.local_llm_adapter import LocalLLMAdapter
 from app.adapters.qdrant_adapter import QdrantAdapter
 from app.api.webhook import criar_router_webhook
 from app.core.models import PullRequest
@@ -39,7 +39,11 @@ config.validar_configuracao()
 # uma única vez, na inicialização, e reaproveitado a cada Pull Request.
 repositorio = GitHubAdapter(token=config.GITHUB_TOKEN)
 conhecimento = QdrantAdapter()
-llm = GeminiAdapter(api_key=config.GEMINI_API_KEY, modelo=config.GEMINI_MODEL)
+# Motor de verificação: modelo de linguagem ABERTO, executado localmente.
+# Esta linha é o único ponto do sistema que sabe qual modelo está em uso — a
+# migração do Gemini (andaime) para o modelo aberto não exigiu nenhuma alteração
+# no núcleo, apenas um novo adaptador implementando a mesma LLMPort.
+llm = LocalLLMAdapter(modelo=config.LLM_LOCAL_MODELO, url=config.LLM_LOCAL_URL)
 
 
 def ao_receber_pull_request(pr: PullRequest) -> None:
