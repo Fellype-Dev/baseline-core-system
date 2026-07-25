@@ -41,6 +41,7 @@ class QdrantAdapter(ConhecimentoPort):
         nome_colecao: str = "regras_arquiteturais",
         modelo_embedding: str = MODELO_PADRAO,
         quantidade_de_regras: int = 3,
+        indexar_exemplos: bool = False,
     ) -> None:
         # path=... ativa o modo embarcado (sem servidor).
         self._cliente = QdrantClient(path=caminho_dados)
@@ -49,6 +50,10 @@ class QdrantAdapter(ConhecimentoPort):
         # Quantas regras retornar por consulta. Fica aqui (detalhe do adaptador)
         # e não na porta, que deve permanecer simples.
         self._quantidade = quantidade_de_regras
+        # Se os exemplos de código da regra entram no texto vetorizado. Ver a
+        # justificativa em `_texto_para_busca`. Precisa ser o MESMO valor usado
+        # na indexação: mudar isto exige reindexar o SDD.
+        self._indexar_exemplos = indexar_exemplos
 
     # ------------------------------------------------------------------
     # Operação de ciclo de vida do adaptador (fora do contrato da porta):
@@ -146,14 +151,34 @@ class QdrantAdapter(ConhecimentoPort):
         """
         self._cliente.close()
 
-    @staticmethod
-    def _texto_para_busca(regra: RegraArquitetural) -> str:
+    def _texto_para_busca(self, regra: RegraArquitetural) -> str:
         """Texto que representa a regra no espaço vetorial.
 
-        Usa apenas as partes em linguagem natural (título, enunciado, motivação
-        e sinais de identificação). Os exemplos de código ficam de fora por
-        enquanto: se incluí-los melhora ou piora a recuperação é uma questão
-        empírica, prevista como experimento para o capítulo de Resultados.
+        A base é a linguagem natural da regra (título, enunciado, motivação e
+        sinais de identificação). Quando `indexar_exemplos` está ligado, os
+        exemplos de código entram ANTES da prosa — e a ordem é o ponto central.
+
+        Duas razões, ambas medidas:
+
+        1. A consulta que chega aqui é derivada do código (assinaturas extraídas
+           da AST), enquanto a regra é prosa em português. São modalidades
+           diferentes de texto, e a distância entre elas domina a similaridade.
+           Os exemplos de código da regra são o único trecho escrito na mesma
+           modalidade da consulta, e é isso que os torna úteis para a busca.
+
+        2. O modelo de embedding TRUNCA a entrada em torno de 128 tokens
+           (~600 caracteres em português), apesar de a descrição da biblioteca
+           anunciar 512. Como a prosa de uma regra já ocupa essa janela
+           inteira, exemplos acrescentados ao FIM são descartados em silêncio:
+           o vetor resultante fica idêntico ao de antes. Colocá-los no início é
+           o que garante que sobrevivam ao corte.
         """
         partes = [regra.titulo, regra.regra, regra.motivacao, regra.como_identificar]
+        if self._indexar_exemplos:
+            # Apenas o exemplo INCORRETO. Indexar também o exemplo correto
+            # aproxima a regra do código que já está em conformidade: ela passa
+            # a ser recuperada exatamente onde não deveria ser cobrada, e o
+            # apontamento indevido vira falso positivo. Medido: incluir os dois
+            # exemplos levou a revocação a 100%, mas derrubou a precisão.
+            partes = [regra.exemplo_incorreto] + partes
         return "\n".join(parte for parte in partes if parte)
