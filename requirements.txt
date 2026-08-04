@@ -1,16 +1,41 @@
-fastapi
-uvicorn[standard]
-PyGithub
-google-generativeai
-python-dotenv
+# Dependências diretas do projeto, com versões FIXAS.
+#
+# As versões são fixas de propósito. Este trabalho reporta métricas de precisão
+# e de falsos positivos obtidas com esta combinação exata de bibliotecas, e uma
+# atualização silenciosa pode alterar o resultado sem que uma linha de código
+# mude: já aconteceu aqui, quando uma nova versão do `fastembed` trocou a
+# estratégia de pooling do modelo de embeddings e alterou os vetores gerados.
+# Sem fixar, os números do trabalho deixam de ser reproduzíveis.
+#
+# Para reproduzir o ambiente exato, incluindo as dependências transitivas, use
+# o arquivo `requirements.lock.txt`.
+
+# API e servidor
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+
+# Integração com o repositório de código
+PyGithub==2.9.1
+
+# Modelo de linguagem local, via executor compatível com a API da OpenAI
+requests==2.34.2
+
+# Modelo de linguagem usado apenas como comparação experimental.
+# NOTA: o pacote `google-generativeai` foi descontinuado pelo Google em favor
+# de `google-genai`. Mantido nesta versão por ser a que produziu os resultados
+# comparativos registrados no trabalho.
+google-generativeai==0.8.6
+
+# Configuração
+python-dotenv==1.2.2
 
 # RAG: banco vetorial embarcado + embeddings locais
-qdrant-client
-fastembed
+qdrant-client==1.18.0
+fastembed==0.8.0
 
 # Leitura do frontmatter YAML das regras do SDD
-PyYAML
+PyYAML==6.0.3
 
 # Testes
-httpx
-pytest
+httpx==0.28.1
+pytest==9.1.1

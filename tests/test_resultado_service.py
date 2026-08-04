@@ -6,6 +6,7 @@ from app.core.models import Violacao
 from app.services.resultado_service import (
     RespostaInvalidaError,
     formatar_comentario,
+    formatar_erro_de_sintaxe,
     interpretar_violacoes,
     montar_comentario_de_avaliacao,
 )
@@ -79,6 +80,21 @@ def test_singular_para_uma_violacao():
         [Violacao(regra="SEG-001", explicacao="x")]
     )
     assert "1 violação encontrada" in comentario
+
+
+# --- formatar_erro_de_sintaxe -----------------------------------------------
+
+def test_erro_de_sintaxe_cita_a_linha_e_a_mensagem():
+    comentario = formatar_erro_de_sintaxe(12, "'(' was never closed")
+    assert "linha 12" in comentario
+    assert "'(' was never closed" in comentario
+    assert "Erro de sintaxe" in comentario
+
+
+def test_erro_de_sintaxe_sem_linha_conhecida():
+    comentario = formatar_erro_de_sintaxe(None, "invalid syntax")
+    assert "linha" not in comentario.split("não pôde ser interpretado")[1][:20]
+    assert "invalid syntax" in comentario
 
 
 # --- montar_comentario_de_avaliacao (D3 completo) ---------------------------

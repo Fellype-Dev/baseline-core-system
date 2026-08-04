@@ -137,21 +137,145 @@ def test_sem_regras_aplicaveis_nao_aciona_o_modelo():
     assert llm.prompt_recebido is None
 
 
-def test_arquivo_python_invalido_nao_derruba_a_revisao():
-    # Conteúdo com sintaxe quebrada: a AST levanta SyntaxError internamente.
-    arquivo = ArquivoAlterado(
-        caminho="app/x.py",
-        diff="@@ -1 +1 @@\n+def quebrado(",
-        conteudo="def quebrado(",
-    )
-    repo = RepositorioFalso([arquivo])
+ARQUIVO_INVALIDO = ArquivoAlterado(
+    caminho="app/x.py",
+    diff="@@ -1 +1 @@\n+def quebrado(",
+    conteudo="def quebrado(",
+)
+
+
+def test_arquivo_python_invalido_e_reportado_como_erro_de_sintaxe():
+    repo = RepositorioFalso([ARQUIVO_INVALIDO])
     llm = LLMFalso(RESPOSTA_COM_VIOLACAO)
 
-    # Não deve levantar; cai para revisão baseada só no diff.
     comentario = analisar_pull_request(
         PullRequest("dono/repo", 1), repo, ConhecimentoFalso([REGRA_SEG]), llm
     )
+
+    assert "Erro de sintaxe" in comentario
+    assert "app/x.py" in comentario
+    # Codigo invalido nao tem arquitetura a avaliar: o modelo nao e acionado.
+    assert llm.prompt_recebido is None
+
+
+def test_erro_de_sintaxe_nao_derruba_os_demais_arquivos():
+    """Um arquivo quebrado no PR não impede a revisão dos outros."""
+    repo = RepositorioFalso([ARQUIVO_INVALIDO, ARQUIVO_PY])
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+    assert "Erro de sintaxe" in comentario
     assert "SEG-001" in comentario
+
+
+def test_erro_de_sintaxe_e_anunciado_ao_observador():
+    observador = ObservadorFalso()
+    analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        RepositorioFalso([ARQUIVO_INVALIDO]),
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+        observador,
+    )
+    assert "sintaxe" in observador.etapas
+
+
+class ObservadorFalso:
+    """Registra os avisos recebidos, para verificar o que o núcleo anunciou."""
+
+    def __init__(self):
+        self.eventos = []
+
+    def registrar(self, evento):
+        self.eventos.append(evento)
+
+    @property
+    def etapas(self):
+        return [evento.etapa for evento in self.eventos]
+
+
+def test_pipeline_anuncia_as_etapas_na_ordem():
+    repo = RepositorioFalso([ARQUIVO_PY])
+    observador = ObservadorFalso()
+
+    revisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+        observador,
+    )
+
+    assert observador.etapas == [
+        "arquivos",
+        "ast",
+        "rag",
+        "llm",
+        "avaliado",
+        "comentario",
+        "concluido",
+    ]
+
+
+def test_evento_do_rag_cita_as_regras_recuperadas():
+    repo = RepositorioFalso([ARQUIVO_PY])
+    observador = ObservadorFalso()
+    analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+        observador,
+    )
+    (evento_rag,) = [e for e in observador.eventos if e.etapa == "rag"]
+    assert "SEG-001" in evento_rag.descricao
+
+
+def test_falha_do_modelo_e_anunciada():
+    observador = ObservadorFalso()
+    analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        RepositorioFalso([ARQUIVO_PY]),
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMQueFalha(),
+        observador,
+    )
+    assert "erro" in observador.etapas
+
+
+def test_observador_que_falha_nao_derruba_a_revisao():
+    """Observabilidade é acessória: um navegador desconectado não pode quebrar o PR."""
+
+    class ObservadorQuebrado:
+        def registrar(self, evento):
+            raise RuntimeError("assinante desconectado")
+
+    repo = RepositorioFalso([ARQUIVO_PY])
+    revisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+        ObservadorQuebrado(),
+    )
+    # A revisão seguiu e publicou, apesar de o observador falhar em toda etapa.
+    assert repo.comentario_publicado is not None
+    assert "SEG-001" in repo.comentario_publicado
+
+
+def test_pipeline_funciona_sem_observador():
+    """O padrão é ninguém observando, e isso não pode mudar o comportamento."""
+    repo = RepositorioFalso([ARQUIVO_PY])
+    revisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+    assert "SEG-001" in repo.comentario_publicado
 
 
 class LLMQueFalha:

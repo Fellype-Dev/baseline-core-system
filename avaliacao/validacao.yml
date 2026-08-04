@@ -1,0 +1,251 @@
+# Conjunto de VALIDAÇÃO — casos novos, reservados.
+#
+# Por que este arquivo existe, separado de `casos.yml`:
+#
+# O corpus de desenvolvimento (`casos.yml`) foi usado para DIAGNOSTICAR o
+# comportamento da ferramenta e para ESCOLHER entre estratégias de indexação.
+# Um número medido no mesmo conjunto que guiou as decisões é resultado em
+# amostra: ele descreve o quanto a configuração se ajustou àquele corpus, não o
+# quanto a ferramenta generaliza. Reportá-lo como desempenho seria enganoso.
+#
+# Estes casos foram escritos DEPOIS que a configuração final foi fixada, e o
+# gabarito foi definido ANTES da primeira execução — nenhum caso foi ajustado
+# em função do resultado obtido. É este conjunto que sustenta a afirmação de
+# desempenho no capítulo de Resultados.
+#
+# São situações deliberadamente diferentes das de desenvolvimento, para exigir
+# generalização e não memorização:
+#   - ARQ-001 violada por importar biblioteca de rede (e não um adaptador);
+#   - ARQ-003 cobrada em `app/api/**` (o corpus de desenvolvimento só exercitou
+#     `app/adapters/**`);
+#   - QUA-001 violada por engolir a exceção retornando um valor (e não por
+#     `pass`);
+#   - SEG-001 violada por senha dentro de string de conexão (e não por chave de
+#     API isolada).
+#
+# Mesma proporção do corpus de desenvolvimento: 7 casos com violação e 5 em
+# conformidade.
+
+casos:
+  # ------------------------------------------------------------------
+  # Casos com violação
+  # ------------------------------------------------------------------
+
+  - nome: nucleo_com_biblioteca_de_rede
+    caminho: app/core/sincronizador.py
+    esperado: [ARQ-001]
+    codigo: |
+      import requests
+
+      from app.core.models import PullRequest
+
+
+      def sincronizar_estado(pr: PullRequest) -> dict:
+          resposta = requests.get(
+              f"https://api.interna.exemplo.com/prs/{pr.numero}",
+              timeout=30,
+          )
+          return resposta.json()
+
+  - nome: porta_com_nome_de_banco
+    caminho: app/core/ports.py
+    esperado: [ARQ-002]
+    codigo: |
+      from abc import ABC, abstractmethod
+
+
+      class PostgresPort(ABC):
+          @abstractmethod
+          def executar_sql(self, comando: str, parametros: tuple) -> list[tuple]:
+              ...
+
+          @abstractmethod
+          def abrir_transacao(self) -> None:
+              ...
+
+  - nome: webhook_decide_regra_de_negocio
+    caminho: app/api/webhook.py
+    esperado: [ARQ-003]
+    codigo: |
+      from fastapi import APIRouter, Request
+
+      router = APIRouter()
+
+
+      @router.post("/eventos")
+      async def receber(request: Request) -> dict:
+          payload = await request.json()
+          arquivos = payload["pull_request"]["changed_files"]
+          titulo = payload["pull_request"]["title"]
+
+          # Decide se o Pull Request merece revisao: isso e criterio de produto.
+          if arquivos < 3 and "hotfix" not in titulo.lower():
+              return {"status": "ignorado"}
+          if arquivos > 50:
+              return {"status": "grande demais"}
+
+          return {"status": "aceito"}
+
+  - nome: senha_em_string_de_conexao
+    caminho: app/servicos/banco.py
+    esperado: [SEG-001]
+    codigo: |
+      import psycopg2
+
+      STRING_DE_CONEXAO = "postgresql://admin:Sup3rS3nh4@db.exemplo.com:5432/producao"
+
+
+      def abrir_conexao():
+          return psycopg2.connect(STRING_DE_CONEXAO)
+
+  - nome: excecao_engolida_com_retorno
+    caminho: app/servicos/cache.py
+    esperado: [QUA-001]
+    codigo: |
+      import json
+      from pathlib import Path
+
+
+      def ler_do_cache(chave: str) -> dict | None:
+          try:
+              return json.loads(Path(f"cache/{chave}.json").read_text())
+          except Exception:
+              return None
+
+  - nome: ano_em_constante_de_versao
+    caminho: app/relatorios/versao.py
+    esperado: [DOC-001]
+    codigo: |
+      NOME_DA_VERSAO = "Plataforma de Revisao - Edicao 2024"
+
+
+      def rodape() -> str:
+          return f"{NOME_DA_VERSAO} | todos os direitos reservados"
+
+  - nome: adaptador_com_segredo_e_logica
+    caminho: app/adapters/pagamento_adapter.py
+    esperado: [SEG-001, ARQ-003]
+    codigo: |
+      import requests
+
+      CHAVE_DA_API = "pk_live_51H8xKjLmNoPqRsTuVwXyZ"
+
+
+      class PagamentoAdapter:
+          def cobrar(self, valor: float, cliente: str) -> dict:
+              # Decide a politica de desconto: isso e regra de negocio.
+              if valor > 1000:
+                  valor = valor * 0.9
+              elif valor < 10:
+                  raise ValueError("valor abaixo do minimo permitido")
+
+              resposta = requests.post(
+                  "https://api.pagamentos.exemplo.com/cobrancas",
+                  headers={"Authorization": f"Bearer {CHAVE_DA_API}"},
+                  json={"valor": valor, "cliente": cliente},
+              )
+              return resposta.json()
+
+  # ------------------------------------------------------------------
+  # Casos em conformidade
+  # ------------------------------------------------------------------
+
+  - nome: nucleo_usando_porta
+    caminho: app/core/orquestrador.py
+    esperado: []
+    codigo: |
+      from app.core.models import PullRequest
+      from app.core.ports import RepositorioPort
+
+
+      def resumir_alteracoes(pr: PullRequest, repositorio: RepositorioPort) -> str:
+          arquivos = repositorio.obter_arquivos_alterados(pr)
+          nomes = ", ".join(arquivo.caminho for arquivo in arquivos)
+          return f"{len(arquivos)} arquivo(s) alterado(s): {nomes}"
+
+  - nome: adaptador_tradutor_puro
+    caminho: app/adapters/email_adapter.py
+    esperado: []
+    codigo: |
+      import os
+      import smtplib
+      from email.message import EmailMessage
+
+
+      class EmailAdapter:
+          def __init__(self) -> None:
+              self._servidor = os.getenv("SMTP_HOST")
+              self._usuario = os.getenv("SMTP_USER")
+              self._senha = os.getenv("SMTP_PASSWORD")
+
+          def enviar(self, destinatario: str, assunto: str, corpo: str) -> None:
+              mensagem = EmailMessage()
+              mensagem["To"] = destinatario
+              mensagem["Subject"] = assunto
+              mensagem.set_content(corpo)
+
+              with smtplib.SMTP(self._servidor) as conexao:
+                  conexao.login(self._usuario, self._senha)
+                  conexao.send_message(mensagem)
+
+  - nome: servico_com_excecao_tratada
+    caminho: app/servicos/importador.py
+    esperado: []
+    codigo: |
+      import logging
+
+      _log = logging.getLogger(__name__)
+
+
+      class ErroDeImportacao(Exception):
+          pass
+
+
+      def importar(linhas: list[str]) -> list[dict]:
+          registros = []
+          for numero, linha in enumerate(linhas, start=1):
+              try:
+                  nome, valor = linha.split(";")
+                  registros.append({"nome": nome, "valor": float(valor)})
+              except ValueError as erro:
+                  _log.error("Linha %s malformada: %s", numero, erro)
+                  raise ErroDeImportacao(f"falha na linha {numero}") from erro
+          return registros
+
+  - nome: config_lendo_ambiente
+    caminho: app/config/credenciais.py
+    esperado: []
+    codigo: |
+      import os
+
+
+      def token_do_repositorio() -> str:
+          token = os.getenv("REPO_TOKEN")
+          if not token:
+              raise RuntimeError("a variavel REPO_TOKEN nao foi definida")
+          return token
+
+
+      def senha_do_banco() -> str:
+          senha = os.getenv("DB_PASSWORD")
+          if not senha:
+              raise RuntimeError("a variavel DB_PASSWORD nao foi definida")
+          return senha
+
+  - nome: porta_de_notificacao
+    caminho: app/core/ports.py
+    esperado: []
+    codigo: |
+      from abc import ABC, abstractmethod
+
+      from app.core.models import PullRequest
+
+
+      class NotificacaoPort(ABC):
+          @abstractmethod
+          def avisar_autor(self, pr: PullRequest, mensagem: str) -> None:
+              ...
+
+          @abstractmethod
+          def avisar_equipe(self, mensagem: str) -> None:
+              ...

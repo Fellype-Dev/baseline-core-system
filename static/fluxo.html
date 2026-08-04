@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Revisor Arquitetural — Fluxo em tempo real</title>
+  <style>
+    :root {
+      --fundo: #0f1117;
+      --carta: #171a23;
+      --borda: #262b38;
+      --texto: #e5e9f0;
+      --apagado: #7d8799;
+      --ativo: #3b82f6;
+      --pronto: #22c55e;
+      --falha: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--fundo);
+      color: var(--texto);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      padding: 2rem;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--borda);
+      padding-bottom: 1rem;
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    header p { color: var(--apagado); font-size: 0.9rem; margin-top: 0.25rem; }
+
+    .conexao {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.85rem; color: var(--apagado);
+    }
+    .ponto {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--falha); transition: background 0.3s;
+    }
+    .conexao.ligada .ponto { background: var(--pronto); }
+
+    /* --- Fluxograma --- */
+    .fluxo {
+      display: flex; align-items: stretch; gap: 0.5rem;
+      flex-wrap: wrap; margin-bottom: 2.5rem;
+    }
+
+    .etapa {
+      flex: 1 1 150px;
+      background: var(--carta);
+      border: 2px solid var(--borda);
+      border-radius: 10px;
+      padding: 1.1rem 1rem;
+      transition: all 0.35s ease;
+      position: relative;
+      opacity: 0.5;
+    }
+
+    .etapa .numero {
+      font-size: 0.7rem; color: var(--apagado);
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .etapa .nome { font-size: 1rem; font-weight: 600; margin: 0.4rem 0 0.3rem; }
+    .etapa .desc { font-size: 0.78rem; color: var(--apagado); line-height: 1.4; }
+
+    .etapa.ativa {
+      opacity: 1;
+      border-color: var(--ativo);
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+      transform: translateY(-3px);
+    }
+    .etapa.ativa .nome { color: var(--ativo); }
+
+    .etapa.concluida { opacity: 1; border-color: var(--pronto); }
+    .etapa.concluida .nome { color: var(--pronto); }
+    .etapa.concluida::after {
+      content: "✓"; position: absolute; top: 0.7rem; right: 0.9rem;
+      color: var(--pronto); font-weight: 700;
+    }
+
+    .etapa.falhou { opacity: 1; border-color: var(--falha); }
+    .etapa.falhou .nome { color: var(--falha); }
+
+    .seta { align-self: center; color: var(--borda); font-size: 1.3rem; }
+
+    /* --- Registro --- */
+    h2 {
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--apagado); margin-bottom: 0.75rem;
+    }
+
+    #registro {
+      background: var(--carta);
+      border: 1px solid var(--borda);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      max-height: 300px; overflow-y: auto;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.82rem; line-height: 1.9;
+    }
+
+    #registro .vazio { color: var(--apagado); font-style: italic; }
+    #registro div { display: flex; gap: 0.9rem; }
+    #registro .hora { color: var(--apagado); flex-shrink: 0; }
+    #registro .rotulo { color: var(--ativo); flex-shrink: 0; width: 6.5rem; }
+    #registro .erro .rotulo { color: var(--falha); }
+    #registro code {
+      background: rgba(255,255,255,0.06); padding: 0.05rem 0.3rem;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Revisor Arquitetural de Pull Requests</h1>
+      <p>Acompanhamento do pipeline em tempo real</p>
+    </div>
+    <div class="conexao" id="conexao">
+      <span class="ponto"></span><span id="conexao-texto">conectando…</span>
+    </div>
+  </header>
+
+  <section class="fluxo" id="fluxo">
+    <div class="etapa" data-etapa="webhook">
+      <div class="numero">Etapa 1</div>
+      <div class="nome">Webhook</div>
+      <div class="desc">Pull Request recebido do GitHub</div>
+    </div>
+    <div class="seta">›</div>
+
+    <div class="etapa" data-etapa="arquivos">
+      <div class="numero">Etapa 2</div>
+      <div class="nome">Arquivos</div>
+      <div class="desc">Alterações obtidas do repositório</div>
+    </div>
+    <div class="seta">›</div>
+
+    <div class="etapa" data-etapa="ast">
+      <div class="numero">Etapa 3</div>
+      <div class="nome">Sanitização</div>
+      <div class="desc">Esqueleto lógico extraído via AST</div>
+    </div>
+    <div class="seta">›</div>
+
+    <div class="etapa" data-etapa="rag">
+      <div class="numero">Etapa 4</div>
+      <div class="nome">Recuperação</div>
+      <div class="desc">Regras do SDD buscadas no banco vetorial</div>
+    </div>
+    <div class="seta">›</div>
+
+    <div class="etapa" data-etapa="llm">
+      <div class="numero">Etapa 5</div>
+      <div class="nome">Avaliação</div>
+      <div class="desc">Modelo de linguagem local analisa o código</div>
+    </div>
+    <div class="seta">›</div>
+
+    <div class="etapa" data-etapa="comentario">
+      <div class="numero">Etapa 6</div>
+      <div class="nome">Publicação</div>
+      <div class="desc">Feedback publicado no Pull Request</div>
+    </div>
+  </section>
+
+  <h2>Registro de execução</h2>
+  <div id="registro"><span class="vazio">Aguardando um Pull Request…</span></div>
+
+  <script>
+    const cartas = {};
+    document.querySelectorAll(".etapa").forEach(el => {
+      cartas[el.dataset.etapa] = el;
+    });
+
+    const registro = document.getElementById("registro");
+    const conexao = document.getElementById("conexao");
+    const conexaoTexto = document.getElementById("conexao-texto");
+
+    // Eventos que o núcleo emite mas que não têm cartão próprio: são
+    // absorvidos pelo cartão da etapa correspondente.
+    const APELIDOS = { avaliado: "llm", concluido: "comentario" };
+
+    function limpar() {
+      Object.values(cartas).forEach(el => el.className = "etapa");
+      registro.innerHTML = "";
+    }
+
+    function anotar(etapa, descricao, falhou) {
+      if (registro.querySelector(".vazio")) registro.innerHTML = "";
+      const linha = document.createElement("div");
+      if (falhou) linha.className = "erro";
+      const hora = new Date().toLocaleTimeString("pt-BR");
+      // O texto vem do servidor; usar textContent evita interpretá-lo como HTML.
+      const texto = document.createElement("span");
+      texto.textContent = descricao;
+      linha.innerHTML =
+        `<span class="hora">${hora}</span><span class="rotulo">${etapa}</span>`;
+      linha.appendChild(texto);
+      registro.appendChild(linha);
+      registro.scrollTop = registro.scrollHeight;
+    }
+
+    function aplicar(etapa) {
+      const alvo = APELIDOS[etapa] || etapa;
+
+      if (etapa === "erro") {
+        Object.values(cartas).forEach(el => {
+          if (el.classList.contains("ativa")) el.className = "etapa falhou";
+        });
+        return;
+      }
+
+      const carta = cartas[alvo];
+      if (!carta) return;
+
+      // A etapa que acabou de chegar fica ativa; as anteriores viram concluídas.
+      let passou = true;
+      for (const chave of Object.keys(cartas)) {
+        if (chave === alvo) { cartas[chave].className = "etapa ativa"; passou = false; }
+        else if (passou) { cartas[chave].className = "etapa concluida"; }
+      }
+
+      if (etapa === "concluido") {
+        Object.values(cartas).forEach(el => el.className = "etapa concluida");
+      }
+    }
+
+    function conectar() {
+      const fonte = new EventSource("/eventos");
+
+      fonte.onopen = () => {
+        conexao.classList.add("ligada");
+        conexaoTexto.textContent = "conectado";
+      };
+
+      fonte.onmessage = (msg) => {
+        const evento = JSON.parse(msg.data);
+        // Um novo Pull Request reinicia o fluxograma.
+        if (evento.etapa === "webhook") limpar();
+        aplicar(evento.etapa);
+        anotar(evento.etapa, evento.descricao, evento.etapa === "erro");
+      };
+
+      fonte.onerror = () => {
+        conexao.classList.remove("ligada");
+        conexaoTexto.textContent = "reconectando…";
+        // O EventSource reconecta sozinho; não há o que fazer aqui.
+      };
+    }
+
+    conectar();
+  </script>
+</body>
+</html>

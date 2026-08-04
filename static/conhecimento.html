@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Base de Conhecimento — Regras Arquiteturais</title>
+  <style>
+    :root {
+      --fundo: #0f1117; --carta: #171a23; --borda: #262b38;
+      --texto: #e5e9f0; --apagado: #7d8799;
+      --ativo: #3b82f6; --pronto: #22c55e; --falha: #ef4444; --alerta: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--fundo); color: var(--texto);
+      font-family: "Segoe UI", system-ui, sans-serif; padding: 2rem;
+    }
+    header {
+      border-bottom: 1px solid var(--borda);
+      padding-bottom: 1rem; margin-bottom: 2rem;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    header p { color: var(--apagado); font-size: 0.9rem; margin-top: 0.25rem; }
+
+    h2 {
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--apagado); margin: 2rem 0 0.85rem;
+    }
+
+    .painel {
+      display: flex; gap: 2.5rem; flex-wrap: wrap;
+      background: var(--carta); border: 1px solid var(--borda);
+      border-radius: 10px; padding: 1.1rem 1.4rem;
+    }
+    .painel div span { display: block; }
+    .painel .rotulo {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--apagado);
+    }
+    .painel .valor { font-size: 1.3rem; font-weight: 600; margin-top: 0.2rem; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th {
+      text-align: left; color: var(--apagado); font-weight: 500;
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em;
+      padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--borda);
+    }
+    td { padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--borda); }
+    tr:last-child td { border-bottom: none; }
+    .id { font-family: Consolas, monospace; color: var(--ativo); font-weight: 600; }
+    .glob {
+      font-family: Consolas, monospace; font-size: 0.78rem; color: var(--apagado);
+    }
+    .etiqueta {
+      display: inline-block; font-size: 0.7rem; padding: 0.12rem 0.5rem;
+      border-radius: 20px; border: 1px solid var(--borda); color: var(--apagado);
+    }
+    .obrigatoria { color: var(--falha); border-color: var(--falha); }
+
+    /* Busca */
+    .busca { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    input {
+      flex: 1 1 320px; background: var(--carta); border: 1px solid var(--borda);
+      color: var(--texto); padding: 0.7rem 0.9rem; border-radius: 8px;
+      font-size: 0.9rem; font-family: inherit;
+    }
+    input:focus { outline: none; border-color: var(--ativo); }
+    input.estreito { flex: 0 1 220px; }
+    button {
+      background: var(--ativo); color: #fff; border: none; padding: 0.7rem 1.5rem;
+      border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+
+    .dica { color: var(--apagado); font-size: 0.8rem; margin-bottom: 1rem; }
+
+    .barra {
+      height: 6px; background: var(--borda); border-radius: 3px;
+      overflow: hidden; min-width: 90px;
+    }
+    .barra i { display: block; height: 100%; background: var(--ativo); }
+    .primeira .barra i { background: var(--pronto); }
+    .descartada { opacity: 0.45; }
+    .descartada .barra i { background: var(--apagado); }
+    .motivo { font-size: 0.72rem; color: var(--alerta); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Base de Conhecimento</h1>
+    <p>Regras arquiteturais indexadas e recuperação semântica</p>
+  </header>
+
+  <div class="painel" id="painel"><div><span class="rotulo">Carregando…</span></div></div>
+
+  <h2>Consulta semântica</h2>
+  <p class="dica">
+    Descreva uma alteração de código. A busca compara <em>significado</em>, não
+    palavras: termos que não aparecem no texto da regra ainda assim a recuperam.
+    Informe um caminho para ver também o filtro de aplicabilidade em ação.
+  </p>
+  <div class="busca">
+    <input id="texto" placeholder="ex.: a chave de acesso está escrita direto no arquivo"
+           value="a chave de acesso esta escrita direto no arquivo">
+    <input id="caminho" class="estreito" placeholder="caminho (opcional)">
+    <button id="botao">Buscar</button>
+  </div>
+  <div id="resultado"></div>
+
+  <h2>Regras indexadas</h2>
+  <div id="regras"></div>
+
+  <script>
+    const painel = document.getElementById("painel");
+    const regras = document.getElementById("regras");
+    const resultado = document.getElementById("resultado");
+    const botao = document.getElementById("botao");
+
+    function texto(valor) {
+      const el = document.createElement("span");
+      el.textContent = valor;
+      return el.outerHTML;
+    }
+
+    async function carregar() {
+      const dados = await (await fetch("/conhecimento/dados")).json();
+      const c = dados.colecao;
+
+      if (!c.indexada) {
+        painel.innerHTML =
+          `<div><span class="rotulo">Estado</span>
+           <span class="valor">Indice nao construido</span></div>`;
+        return;
+      }
+
+      painel.innerHTML = `
+        <div><span class="rotulo">Regras</span><span class="valor">${c.regras}</span></div>
+        <div><span class="rotulo">Dimensoes</span><span class="valor">${c.dimensoes}</span></div>
+        <div><span class="rotulo">Metrica</span><span class="valor">${c.metrica}</span></div>
+        <div><span class="rotulo">Por consulta</span><span class="valor">${c.regras_por_consulta}</span></div>`;
+
+      regras.innerHTML = `<table><thead><tr>
+          <th>ID</th><th>Titulo</th><th>Categoria</th><th>Severidade</th>
+          <th>Escopo</th><th>Excecoes</th></tr></thead><tbody>
+        ${dados.regras.map(r => `<tr>
+          <td class="id">${texto(r.identificador)}</td>
+          <td>${texto(r.titulo)}</td>
+          <td>${texto(r.categoria)}</td>
+          <td><span class="etiqueta ${r.severidade === "obrigatoria" ? "obrigatoria" : ""}">${texto(r.severidade)}</span></td>
+          <td class="glob">${r.aplica_se_a.map(texto).join("<br>") || "—"}</td>
+          <td class="glob">${r.excecoes.map(texto).join("<br>") || "—"}</td>
+        </tr>`).join("")}</tbody></table>`;
+    }
+
+    async function buscar() {
+      botao.disabled = true;
+      resultado.innerHTML = `<p class="dica">Gerando o vetor da consulta…</p>`;
+      try {
+        const resposta = await fetch("/conhecimento/buscar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            texto: document.getElementById("texto").value,
+            caminho: document.getElementById("caminho").value,
+          }),
+        });
+        const dados = await resposta.json();
+        const maior = Math.max(...dados.resultados.map(r => r.pontuacao), 0.0001);
+
+        resultado.innerHTML = `<table><thead><tr>
+            <th>#</th><th>Regra</th><th>Similaridade</th><th></th>
+            ${dados.com_filtro ? "<th>Aplicavel</th>" : ""}</tr></thead><tbody>
+          ${dados.resultados.map((r, i) => `
+            <tr class="${i === 0 ? "primeira" : ""} ${r.aplicavel ? "" : "descartada"}">
+              <td>${i + 1}</td>
+              <td><span class="id">${texto(r.identificador)}</span> ${texto(r.titulo)}</td>
+              <td>${r.pontuacao.toFixed(4)}</td>
+              <td><div class="barra"><i style="width:${(r.pontuacao / maior) * 100}%"></i></div></td>
+              ${dados.com_filtro
+                ? `<td>${r.aplicavel ? "sim" : '<span class="motivo">descartada pelo escopo</span>'}</td>`
+                : ""}
+            </tr>`).join("")}</tbody></table>`;
+      } finally {
+        botao.disabled = false;
+      }
+    }
+
+    botao.addEventListener("click", buscar);
+    document.getElementById("texto").addEventListener("keydown", e => {
+      if (e.key === "Enter") buscar();
+    });
+    carregar();
+  </script>
+</body>
+</html>

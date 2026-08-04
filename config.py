@@ -14,6 +14,12 @@ load_dotenv()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Segredo compartilhado com o webhook do repositório. Quando definido, apenas
+# entregas assinadas pelo GitHub são aceitas. Opcional para não quebrar
+# instalações já existentes, mas recomendado: sem ele, qualquer pessoa que
+# conheça o endereço consegue disparar uma revisão.
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
+
 # Modelo do Gemini. Mantido apenas para comparação experimental: o Gemini serviu
 # de andaime durante a construção e não é mais o motor do sistema.
 GEMINI_MODEL = "gemini-2.5-flash"

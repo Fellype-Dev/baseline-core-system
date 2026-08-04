@@ -49,6 +49,15 @@ from avaliacao.metricas import (  # noqa: E402
 
 CAMINHO_DOS_CASOS = RAIZ / "avaliacao" / "casos.yml"
 
+# Os dois conjuntos servem a propósitos distintos e não devem ser misturados:
+# `casos` guiou o desenvolvimento (foi usado para diagnosticar e para escolher a
+# configuração); `validacao` foi escrito depois, com a configuração já fixada, e
+# é o único que sustenta afirmação de desempenho.
+CORPUS = {
+    "casos": RAIZ / "avaliacao" / "casos.yml",
+    "validacao": RAIZ / "avaliacao" / "validacao.yml",
+}
+
 # O plano gratuito do Gemini limita as chamadas por minuto. Uma rodada completa
 # do corpus estoura esse limite se disparar tudo em sequência, então o executor
 # espaça as chamadas e insiste quando é recusado. Sem isso, a avaliação
@@ -209,13 +218,19 @@ def principal() -> None:
         default="local",
         help="qual motor avaliar (o sistema usa 'local'; 'gemini' é comparação)",
     )
+    parser.add_argument(
+        "--corpus",
+        choices=sorted(CORPUS),
+        default="casos",
+        help="qual conjunto avaliar ('casos' = desenvolvimento; 'validacao' = reservado)",
+    )
     argumentos = parser.parse_args()
 
     # O modelo local não tem cota: esperar entre casos só desperdiça tempo.
     if argumentos.pausa is None:
         argumentos.pausa = 0.0 if argumentos.llm == "local" else PAUSA_PADRAO_EM_SEGUNDOS
 
-    casos = carregar_casos()
+    casos = carregar_casos(CORPUS[argumentos.corpus])
     if argumentos.caso:
         casos = [c for c in casos if c["nome"] == argumentos.caso]
         if not casos:
@@ -224,7 +239,8 @@ def principal() -> None:
 
     modo = "COM exemplos (few-shot)" if argumentos.com_exemplos else "SEM exemplos"
     print(
-        f"Avaliando {len(casos)} caso(s) — motor '{argumentos.llm}', prompt {modo}.\n"
+        f"Avaliando {len(casos)} caso(s) do conjunto '{argumentos.corpus}' — "
+        f"motor '{argumentos.llm}', prompt {modo}.\n"
     )
 
     conhecimento, llm = _montar_dependencias(argumentos.llm)
