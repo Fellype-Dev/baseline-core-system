@@ -94,6 +94,23 @@ def formatar_comentario(violacoes: list[Violacao]) -> str:
     return "\n\n".join(partes)
 
 
+def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
+    """Relata um arquivo que não pôde ser interpretado.
+
+    Um arquivo com sintaxe inválida não tem arquitetura a avaliar — não há
+    esqueleto lógico para extrair, e perguntar ao modelo sobre código quebrado
+    produziria ruído. Em vez de silenciar o problema, o autor é avisado dele,
+    que é o retorno mais útil naquele momento.
+    """
+    local = f" na linha {linha}" if linha else ""
+    return (
+        "## ⚠️ Erro de sintaxe\n\n"
+        f"Este arquivo não pôde ser interpretado{local}: {mensagem}.\n\n"
+        "A revisão arquitetural não foi realizada porque não há estrutura a "
+        "analisar enquanto o código não for válido."
+    )
+
+
 def montar_comentario_de_avaliacao(resposta_llm: str) -> str:
     """Feature D3 completa: interpreta a resposta do modelo e formata o comentário.
 

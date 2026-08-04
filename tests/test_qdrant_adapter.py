@@ -149,6 +149,51 @@ def test_busca_respeita_o_limite_de_resultados(adaptador):
 
 
 @pytest.mark.integracao
+def test_descrever_colecao_resume_o_indice(adaptador):
+    descricao = adaptador.descrever_colecao()
+    assert descricao["indexada"] is True
+    assert descricao["regras"] == len(REGRAS)
+    assert descricao["dimensoes"] > 0
+
+
+@pytest.mark.integracao
+def test_listar_regras_devolve_tudo_ordenado(adaptador):
+    identificadores = [regra.identificador for regra in adaptador.listar_regras()]
+    assert identificadores == sorted(identificadores)
+    assert set(identificadores) == {regra.identificador for regra in REGRAS}
+
+
+@pytest.mark.integracao
+def test_busca_com_pontuacao_nao_descarta_candidatas(adaptador):
+    """A inspeção mostra tudo, inclusive o que o filtro rejeitaria."""
+    resultados = adaptador.buscar_com_pontuacao(
+        "o token de acesso esta escrito direto no arquivo",
+        ConsultaDeRegras(
+            texto="", caminho="app/servicos/conexao.py", linguagem="python"
+        ),
+    )
+    por_identificador = {regra.identificador: (p, ok) for regra, p, ok in resultados}
+
+    # Todas as regras aparecem, com pontuação — nada é omitido.
+    assert set(por_identificador) == {regra.identificador for regra in REGRAS}
+    # SEG-001 vale para qualquer .py; ARQ-003 só para `app/adapters/**`. A
+    # inspeção mostra as duas, marcando corretamente quem seria descartada.
+    assert por_identificador["SEG-001"][1] is True
+    assert por_identificador["ARQ-003"][1] is False
+
+
+@pytest.mark.integracao
+def test_inspecao_sem_indice_nao_quebra(tmp_path):
+    vazio = QdrantAdapter(caminho_dados=str(tmp_path / "sem_indice"))
+    try:
+        assert vazio.descrever_colecao() == {"indexada": False}
+        assert vazio.listar_regras() == []
+        assert vazio.buscar_com_pontuacao("qualquer coisa") == []
+    finally:
+        vazio.fechar()
+
+
+@pytest.mark.integracao
 def test_busca_sem_colecao_indexada_devolve_lista_vazia(tmp_path):
     vazio = QdrantAdapter(caminho_dados=str(tmp_path / "sem_indice"))
     try:

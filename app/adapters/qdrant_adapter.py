@@ -141,6 +141,68 @@ class QdrantAdapter(ConhecimentoPort):
             dados[campo] = tuple(dados.get(campo) or ())
         return RegraArquitetural(**dados)
 
+    # ------------------------------------------------------------------
+    # Inspeção do índice (fora do contrato da porta).
+    #
+    # O núcleo nunca precisa saber o que está armazenado nem com que pontuação
+    # — ele só pede as regras relevantes. Estas operações existem para tornar o
+    # índice observável de fora: sem elas, a etapa de recuperação seria uma
+    # caixa-preta, impossível de demonstrar ou de auditar.
+    # ------------------------------------------------------------------
+
+    def descrever_colecao(self) -> dict:
+        """Resume o estado do índice: quantas regras, dimensão e métrica."""
+        if not self._cliente.collection_exists(self._colecao):
+            return {"indexada": False}
+
+        info = self._cliente.get_collection(self._colecao)
+        vetores = info.config.params.vectors
+        return {
+            "indexada": True,
+            "colecao": self._colecao,
+            "regras": info.points_count,
+            "dimensoes": vetores.size,
+            "metrica": vetores.distance.value,
+            "regras_por_consulta": self._quantidade,
+        }
+
+    def listar_regras(self) -> list[RegraArquitetural]:
+        """Devolve todas as regras armazenadas, ordenadas por identificador."""
+        if not self._cliente.collection_exists(self._colecao):
+            return []
+
+        pontos, _ = self._cliente.scroll(
+            collection_name=self._colecao, limit=1000, with_payload=True
+        )
+        regras = [self._regra_do_payload(ponto.payload) for ponto in pontos]
+        return sorted(regras, key=lambda regra: regra.identificador)
+
+    def buscar_com_pontuacao(
+        self, texto: str, consulta: ConsultaDeRegras | None = None
+    ) -> list[tuple[RegraArquitetural, float, bool]]:
+        """Busca semântica exposta com as pontuações, para inspeção.
+
+        Devolve todas as candidatas com a similaridade obtida e se cada uma seria
+        aceita pelo filtro de aplicabilidade. Diferente de
+        `buscar_regras_relevantes`, nada é descartado: o objetivo aqui é mostrar
+        POR QUE uma regra entrou ou ficou de fora, e não entregar um resultado
+        pronto ao núcleo.
+        """
+        if not self._cliente.collection_exists(self._colecao):
+            return []
+
+        vetor = next(iter(self._modelo.embed([texto]))).tolist()
+        resposta = self._cliente.query_points(
+            collection_name=self._colecao, query=vetor, limit=50
+        )
+
+        resultado = []
+        for ponto in resposta.points:
+            regra = self._regra_do_payload(ponto.payload)
+            aplicavel = regra_se_aplica(regra, consulta) if consulta else True
+            resultado.append((regra, ponto.score, aplicavel))
+        return resultado
+
     def fechar(self) -> None:
         """Libera o banco embarcado de forma explícita.
 

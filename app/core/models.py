@@ -81,6 +81,22 @@ class ConsultaDeRegras:
 
 
 @dataclass(frozen=True)
+class EventoDeProgresso:
+    """Um aviso do núcleo sobre a etapa do pipeline que acabou de acontecer.
+
+    Existe para tornar observável um processo que, de outro modo, é invisível:
+    entre receber o Pull Request e publicar o comentário, o sistema percorre
+    sanitização, recuperação de regras e avaliação sem dar qualquer sinal.
+
+    O núcleo apenas ANUNCIA o que fez; o que se faz com o aviso (registrar em
+    log, transmitir para um navegador, ignorar) é decisão do adaptador.
+    """
+
+    etapa: str       # identificador da etapa, ex.: "ast", "rag", "llm"
+    descricao: str   # texto legível descrevendo o que aconteceu
+
+
+@dataclass(frozen=True)
 class Violacao:
     """Uma violação de regra apontada pelo modelo na avaliação de um PR.
 

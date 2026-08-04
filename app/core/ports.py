@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 from app.core.models import (
     ArquivoAlterado,
     ConsultaDeRegras,
+    EventoDeProgresso,
     PullRequest,
     RegraArquitetural,
 )
@@ -57,6 +58,24 @@ class ConhecimentoPort(ABC):
         outra linguagem ou fora do escopo de caminho declarado no SDD, para que
         o núcleo nunca receba uma regra que não deveria ser cobrada ali.
         """
+        ...
+
+
+class ObservadorPort(ABC):
+    """Contrato para acompanhar o progresso de uma revisão.
+
+    O núcleo anuncia cada etapa concluída sem saber quem escuta nem para quê.
+    Um adaptador escreve em log, outro transmite para um navegador, e nos testes
+    um dublê apenas registra os avisos recebidos.
+
+    Esta porta é opcional por natureza: o pipeline funciona igual quando não há
+    ninguém observando (ver `ObservadorNulo`). Observabilidade não pode ser
+    requisito de funcionamento.
+    """
+
+    @abstractmethod
+    def registrar(self, evento: EventoDeProgresso) -> None:
+        """Recebe o aviso de que uma etapa do pipeline aconteceu."""
         ...
 
 
