@@ -44,10 +44,11 @@ _CAMPOS_OBRIGATORIOS = ("id", "titulo", "categoria", "severidade")
 
 
 def carregar_sdd(diretorio_base: str | Path) -> list[RegraArquitetural]:
-    """Carrega o SDD completo: lê a configuração e as regras ativas.
+    """Carrega o SDD completo a partir de um diretório do sistema de arquivos.
 
-    É o ponto de entrada normal. Regras com status diferente de "ativa" são
-    descartadas, para que uma regra descontinuada não gere apontamentos.
+    Usado pelo script de indexação manual. Regras com status diferente de
+    "ativa" são descartadas, para que uma regra descontinuada não gere
+    apontamentos.
     """
     base = Path(diretorio_base)
     arquivo_config = base / "sdd.config.yml"
@@ -56,6 +57,33 @@ def carregar_sdd(diretorio_base: str | Path) -> list[RegraArquitetural]:
     )
 
     regras = carregar_regras(base / "regras", configuracao)
+    return [regra for regra in regras if regra.status == "ativa"]
+
+
+def interpretar_sdd(
+    arquivos_de_regra: dict[str, str], configuracao_yaml: str | None = None
+) -> list[RegraArquitetural]:
+    """Interpreta um SDD já lido para a memória, sem tocar no disco.
+
+    Existe porque o SDD pertence à organização, e não à ferramenta: ele é obtido
+    do repositório que está sendo revisado, por meio da porta do repositório, e
+    chega aqui como texto. Manter a interpretação independente do sistema de
+    arquivos é o que permite essa origem.
+
+    Args:
+        arquivos_de_regra: nome do arquivo -> conteúdo, um por regra.
+        configuracao_yaml: conteúdo do `sdd.config.yml`, quando existir.
+    """
+    configuracao = yaml.safe_load(configuracao_yaml) or {} if configuracao_yaml else None
+
+    regras = [
+        interpretar_regra(nome, texto)
+        for nome, texto in sorted(arquivos_de_regra.items())
+    ]
+
+    if configuracao:
+        _validar_vocabulario(regras, configuracao)
+
     return [regra for regra in regras if regra.status == "ativa"]
 
 
@@ -72,7 +100,10 @@ def carregar_regras(
     if not caminho.is_dir():
         raise ErroDeSDD(f"diretório de regras não encontrado: {caminho}")
 
-    regras = [_ler_regra(arquivo) for arquivo in sorted(caminho.glob("*.md"))]
+    regras = [
+        interpretar_regra(arquivo.name, arquivo.read_text(encoding="utf-8"))
+        for arquivo in sorted(caminho.glob("*.md"))
+    ]
 
     if configuracao:
         _validar_vocabulario(regras, configuracao)
@@ -80,21 +111,25 @@ def carregar_regras(
     return regras
 
 
-def _ler_regra(caminho: Path) -> RegraArquitetural:
-    """Converte um arquivo de regra em modelo de domínio."""
-    metadados, corpo = _separar_frontmatter(caminho)
+def interpretar_regra(nome: str, texto: str) -> RegraArquitetural:
+    """Converte o conteúdo de um arquivo de regra em modelo de domínio.
+
+    Recebe o texto já lido, e não um caminho, para que a origem da regra seja
+    indiferente: ela pode vir do disco ou do repositório sob revisão.
+    """
+    metadados, corpo = _separar_frontmatter(nome, texto)
     secoes = _extrair_secoes(corpo)
 
     ausentes = [campo for campo in _CAMPOS_OBRIGATORIOS if not metadados.get(campo)]
     if ausentes:
         raise ErroDeSDD(
-            f"{caminho.name}: campos obrigatórios ausentes no frontmatter: "
+            f"{nome}: campos obrigatórios ausentes no frontmatter: "
             + ", ".join(ausentes)
         )
 
     for secao in ("regra", "motivacao"):
         if not secoes.get(secao):
-            raise ErroDeSDD(f"{caminho.name}: seção '{secao}' ausente ou vazia")
+            raise ErroDeSDD(f"{nome}: seção '{secao}' ausente ou vazia")
 
     return RegraArquitetural(
         identificador=metadados["id"],
@@ -113,17 +148,15 @@ def _ler_regra(caminho: Path) -> RegraArquitetural:
     )
 
 
-def _separar_frontmatter(caminho: Path) -> tuple[dict, str]:
-    """Divide o arquivo entre o frontmatter YAML e o corpo em markdown."""
-    texto = caminho.read_text(encoding="utf-8")
-
+def _separar_frontmatter(nome: str, texto: str) -> tuple[dict, str]:
+    """Divide o conteúdo entre o frontmatter YAML e o corpo em markdown."""
     if not texto.lstrip().startswith("---"):
-        raise ErroDeSDD(f"{caminho.name}: arquivo de regra sem frontmatter YAML")
+        raise ErroDeSDD(f"{nome}: arquivo de regra sem frontmatter YAML")
 
     # O frontmatter fica entre o primeiro e o segundo '---'.
     partes = texto.split("---", 2)
     if len(partes) < 3:
-        raise ErroDeSDD(f"{caminho.name}: frontmatter YAML não foi fechado com '---'")
+        raise ErroDeSDD(f"{nome}: frontmatter YAML não foi fechado com '---'")
 
     metadados = yaml.safe_load(partes[1]) or {}
     return metadados, partes[2]

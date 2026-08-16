@@ -97,17 +97,18 @@ def formatar_comentario(violacoes: list[Violacao]) -> str:
 def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
     """Relata um arquivo que não pôde ser interpretado.
 
-    Um arquivo com sintaxe inválida não tem arquitetura a avaliar — não há
-    esqueleto lógico para extrair, e perguntar ao modelo sobre código quebrado
-    produziria ruído. Em vez de silenciar o problema, o autor é avisado dele,
-    que é o retorno mais útil naquele momento.
+    O erro impede apenas a extração do esqueleto lógico, e não a revisão como um
+    todo: um caractere faltando em uma linha não invalida o restante do arquivo.
+    Por isso o aviso acompanha a revisão em vez de substituí-la — deixar de
+    apontar uma violação real por causa de um erro de digitação seria uma troca
+    ruim para uma ferramenta de governança.
     """
     local = f" na linha {linha}" if linha else ""
     return (
         "## ⚠️ Erro de sintaxe\n\n"
         f"Este arquivo não pôde ser interpretado{local}: {mensagem}.\n\n"
-        "A revisão arquitetural não foi realizada porque não há estrutura a "
-        "analisar enquanto o código não for válido."
+        "A análise estrutural foi ignorada neste arquivo; a revisão a seguir "
+        "considerou apenas as linhas alteradas."
     )
 
 

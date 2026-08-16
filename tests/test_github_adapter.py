@@ -92,6 +92,28 @@ def test_arquivo_removido_nao_tem_conteudo():
     assert repo.refs_pedidas == []
 
 
+def test_marca_de_ordem_de_byte_e_descartada():
+    """Arquivos salvos com BOM (comum no Windows) precisam chegar limpos.
+
+    Sem isso, o U+FEFF sobrevive à decodificação e a análise sintática falha na
+    primeira linha, mesmo quando o código é válido.
+    """
+    import ast
+
+    codigo = "def soma(a, b):\n    return a + b\n"
+    pull = _PullFalso(arquivos=[_ArquivoFalso("app/x.py", patch="@@ -1 +1 @@\n+x")])
+    repo = _RepoFalso(pull, conteudos={"app/x.py": "﻿" + codigo})
+
+    adaptador = GitHubAdapter(token="falso")
+    adaptador._cliente = _ClienteFalso(repo)
+
+    (arquivo,) = adaptador.obter_arquivos_alterados(PullRequest("dono/repo", 7))
+
+    assert "﻿" not in arquivo.conteudo
+    assert arquivo.conteudo == codigo
+    ast.parse(arquivo.conteudo)  # não deve levantar SyntaxError
+
+
 def test_arquivo_sem_patch_e_ignorado():
     pull = _PullFalso(arquivos=[_ArquivoFalso("imagem.png", patch=None)])
     repo = _RepoFalso(pull, conteudos={})

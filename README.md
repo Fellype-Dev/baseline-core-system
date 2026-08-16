@@ -70,9 +70,21 @@ avaliacao/      corpus, gabarito e métricas da avaliação empírica
 
 ## O documento SDD
 
-As regras ficam versionadas no repositório, **uma por arquivo**, em
-`sdd/regras/<ID>-<slug>.md`. Cada arquivo combina metadados legíveis por
-máquina com texto em linguagem natural:
+**As regras pertencem à organização, não à ferramenta.** Cada repositório
+revisado declara as suas em um diretório `sdd/`, versionado junto ao próprio
+código. A ferramenta lê esse diretório do repositório no momento da revisão —
+quem usa o sistema não precisa ter acesso ao código-fonte dele.
+
+Duas consequências: alterar uma regra é um Pull Request auditável no
+repositório da organização, e organizações distintas são avaliadas por
+critérios distintos pela mesma instalação da ferramenta.
+
+> O diretório `sdd/` deste repositório é um **exemplo de referência**, usado
+> também como corpus da avaliação empírica. Ele não governa os repositórios
+> revisados.
+
+As regras ficam **uma por arquivo**, em `sdd/regras/<ID>-<slug>.md`. Cada
+arquivo combina metadados legíveis por máquina com texto em linguagem natural:
 
 ```markdown
 ---
@@ -112,10 +124,17 @@ venv\Scripts\python.exe -m pip install -r requirements.txt
 venv\Scripts\python.exe -m pip install -r requirements.lock.txt  # ambiente exato
 ```
 
-Baixe o modelo e indexe o SDD:
+Baixe o modelo de linguagem:
 
 ```bash
 ollama pull qwen2.5-coder:14b
+```
+
+O SDD de cada repositório é lido automaticamente no momento da revisão, e
+reindexado apenas quando muda. O script abaixo serve para indexar um SDD local
+— usado pela avaliação empírica, não pelo fluxo de revisão:
+
+```bash
 venv\Scripts\python.exe scripts\indexar_sdd.py --com-exemplos
 ```
 

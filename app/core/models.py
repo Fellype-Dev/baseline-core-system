@@ -67,6 +67,24 @@ class RegraArquitetural:
 
 
 @dataclass(frozen=True)
+class DocumentoSDD:
+    """O documento de especificação, tal como obtido do repositório revisado.
+
+    Guarda o conteúdo bruto dos arquivos, ainda não interpretado: o domínio
+    recebe texto e decide como lê-lo, sem que a origem — disco, API do
+    repositório ou outra qualquer — influencie a interpretação.
+    """
+
+    regras: dict[str, str]          # nome do arquivo -> conteúdo
+    configuracao: str | None = None  # conteúdo do sdd.config.yml, se houver
+
+    @property
+    def vazio(self) -> bool:
+        """Diz se o repositório não declarou nenhuma regra."""
+        return not self.regras
+
+
+@dataclass(frozen=True)
 class ConsultaDeRegras:
     """O contexto de uma busca por regras no SDD.
 
@@ -75,9 +93,10 @@ class ConsultaDeRegras:
     alterar a assinatura da porta e sem quebrar os adaptadores existentes.
     """
 
-    texto: str       # descrição do que mudou, usada na busca semântica
-    caminho: str     # arquivo alterado, ex.: "app/core/pipeline.py"
-    linguagem: str   # ex.: "python"
+    texto: str          # descrição do que mudou, usada na busca semântica
+    caminho: str        # arquivo alterado, ex.: "app/core/pipeline.py"
+    linguagem: str      # ex.: "python"
+    repositorio: str = ""  # de qual repositório são as regras a consultar
 
 
 @dataclass(frozen=True)

@@ -9,10 +9,13 @@ Repare na direção dos imports: este arquivo importa do núcleo (`app.core`), m
 o núcleo nunca importa daqui. A dependência aponta para dentro.
 """
 
-from github import Github, Auth
+from github import Auth, Github, GithubException
 
-from app.core.models import ArquivoAlterado, PullRequest
+from app.core.models import ArquivoAlterado, DocumentoSDD, PullRequest
 from app.core.ports import RepositorioPort
+
+# Diretório, no repositório revisado, onde a organização declara suas regras.
+DIRETORIO_SDD = "sdd"
 
 
 class GitHubAdapter(RepositorioPort):
@@ -61,7 +64,51 @@ class GitHubAdapter(RepositorioPort):
 
         conteudo = repositorio.get_contents(arquivo_github.filename, ref=ref)
         # get_contents devolve bytes já decodificados do base64 da API.
-        return conteudo.decoded_content.decode("utf-8")
+        #
+        # A decodificação usa "utf-8-sig", e não "utf-8", para descartar a marca
+        # de ordem de byte quando ela existe. Arquivos criados em editores do
+        # Windows costumam trazê-la, e o caractere resultante (U+FEFF) faria a
+        # análise sintática falhar já na primeira linha, mesmo em código válido.
+        # O tratamento é indiferente para arquivos sem a marca.
+        return conteudo.decoded_content.decode("utf-8-sig")
+
+    def obter_documento_sdd(self, pr: PullRequest) -> DocumentoSDD:
+        """Lê o diretório `sdd/` versionado no repositório revisado.
+
+        A leitura é feita no branch padrão, e não no branch do Pull Request:
+        as regras vigentes são as que a organização já aprovou, e não as que a
+        submissão em avaliação eventualmente proponha. Do contrário, bastaria
+        alterar o SDD no próprio Pull Request para escapar de uma regra.
+        """
+        repositorio = self._cliente.get_repo(pr.repositorio)
+
+        regras = self._ler_diretorio(repositorio, f"{DIRETORIO_SDD}/regras")
+        configuracao = self._ler_arquivo(
+            repositorio, f"{DIRETORIO_SDD}/sdd.config.yml"
+        )
+        return DocumentoSDD(regras=regras, configuracao=configuracao)
+
+    def _ler_diretorio(self, repositorio, caminho: str) -> dict[str, str]:
+        """Lê os arquivos markdown de um diretório do repositório."""
+        try:
+            itens = repositorio.get_contents(caminho)
+        except GithubException:
+            # Repositório sem documento de especificação: não é erro, apenas
+            # significa que não há regras declaradas a cobrar.
+            return {}
+
+        return {
+            item.name: item.decoded_content.decode("utf-8-sig")
+            for item in itens
+            if item.type == "file" and item.name.endswith(".md")
+        }
+
+    def _ler_arquivo(self, repositorio, caminho: str) -> str | None:
+        """Lê um arquivo do repositório, ou None se ele não existir."""
+        try:
+            return repositorio.get_contents(caminho).decoded_content.decode("utf-8-sig")
+        except GithubException:
+            return None
 
     def publicar_comentario(self, pr: PullRequest, texto: str) -> None:
         """Publica o texto do feedback como um comentário no Pull Request."""
