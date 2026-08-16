@@ -51,6 +51,7 @@ from app.services.resultado_service import (
     formatar_erro_de_sintaxe,
     montar_comentario_de_avaliacao,
 )
+from app.services.sdd_service import ErroDeSDD, interpretar_sdd
 
 _log = logging.getLogger(__name__)
 
@@ -95,6 +96,16 @@ def analisar_pull_request(
     """
     observador = observador or ObservadorNulo()
 
+    # As regras vêm do repositório revisado, e não da ferramenta: cada
+    # organização declara as suas, versionadas junto ao próprio código.
+    if not _carregar_regras_do_repositorio(pr, repositorio, conhecimento, observador):
+        return (
+            "# Revisão Arquitetural\n\n"
+            "Este repositório não possui um documento de especificação "
+            "arquitetural em `sdd/`, ou nenhuma de suas regras está ativa. "
+            "Nenhuma verificação foi realizada."
+        )
+
     arquivos = repositorio.obter_arquivos_alterados(pr)
     _anunciar(
         observador,
@@ -104,7 +115,9 @@ def analisar_pull_request(
 
     blocos: list[str] = []
     for arquivo in arquivos:
-        comentario = _revisar_arquivo(arquivo, conhecimento, llm, observador)
+        comentario = _revisar_arquivo(
+            arquivo, pr.repositorio, conhecimento, llm, observador
+        )
         if comentario is not None:
             blocos.append(f"**Arquivo:** `{arquivo.caminho}`\n\n{comentario}")
 
@@ -119,8 +132,48 @@ def analisar_pull_request(
     return f"# Revisão Arquitetural de Pull Request\n\n{corpo}"
 
 
+def _carregar_regras_do_repositorio(
+    pr: PullRequest,
+    repositorio: RepositorioPort,
+    conhecimento: ConhecimentoPort,
+    observador: ObservadorPort,
+) -> bool:
+    """Lê o SDD do repositório e sincroniza a base. Diz se há regras a cobrar.
+
+    Um documento malformado não derruba a revisão: o problema é registrado e o
+    Pull Request segue sem apontamentos, em vez de falhar silenciosamente ou de
+    devolver um erro técnico ao autor, que não é quem pode corrigi-lo.
+    """
+    documento = repositorio.obter_documento_sdd(pr)
+    if documento.vazio:
+        _anunciar(
+            observador, "sdd", "O repositório não declara regras arquiteturais."
+        )
+        return False
+
+    try:
+        regras = interpretar_sdd(documento.regras, documento.configuracao)
+    except ErroDeSDD:
+        _log.exception("Documento de especificação inválido em %s.", pr.repositorio)
+        _anunciar(observador, "erro", "Documento de especificação inválido.")
+        return False
+
+    if not regras:
+        _anunciar(observador, "sdd", "Nenhuma regra ativa no documento.")
+        return False
+
+    conhecimento.sincronizar_regras(pr.repositorio, regras)
+    _anunciar(
+        observador,
+        "sdd",
+        f"{len(regras)} regra(s) ativa(s) carregada(s) de `{pr.repositorio}`.",
+    )
+    return True
+
+
 def _revisar_arquivo(
     arquivo: ArquivoAlterado,
+    repositorio: str,
     conhecimento: ConhecimentoPort,
     llm: LLMPort,
     observador: ObservadorPort,
@@ -132,32 +185,37 @@ def _revisar_arquivo(
     """
     linguagem = identificar_linguagem(arquivo.caminho)
 
-    # Um arquivo que não parseia é reportado como tal, e não avaliado. Antes,
-    # o erro era engolido e a revisão seguia com o diff — o autor nunca ficava
-    # sabendo que havia submetido código inválido.
+    # Um arquivo que não parseia é REPORTADO, mas não deixa de ser revisado: a
+    # falha impede apenas a extração do esqueleto, e a revisão prossegue pelas
+    # linhas alteradas — o mesmo caminho já usado para linguagens sem suporte a
+    # análise sintática. Deixar de apontar uma violação real por causa de um
+    # caractere faltando seria uma troca ruim.
     erro_de_sintaxe = _erro_de_sintaxe(arquivo, linguagem)
     if erro_de_sintaxe is not None:
+        aviso = formatar_erro_de_sintaxe(
+            erro_de_sintaxe.lineno, erro_de_sintaxe.msg or "sintaxe inválida"
+        )
+        elementos = []
         _anunciar(
             observador,
             "sintaxe",
-            f"`{arquivo.caminho}`: código inválido — revisão não realizada.",
+            f"`{arquivo.caminho}`: código inválido — revisão seguirá pelo diff.",
         )
-        return formatar_erro_de_sintaxe(
-            erro_de_sintaxe.lineno, erro_de_sintaxe.msg or "sintaxe inválida"
+    else:
+        aviso = None
+        elementos = _extrair_elementos_alterados(arquivo, linguagem)
+        _anunciar(
+            observador,
+            "ast",
+            f"`{arquivo.caminho}`: {len(elementos)} elemento(s) alterado(s) "
+            "isolado(s) pela análise sintática.",
         )
-
-    elementos = _extrair_elementos_alterados(arquivo, linguagem)
-    _anunciar(
-        observador,
-        "ast",
-        f"`{arquivo.caminho}`: {len(elementos)} elemento(s) alterado(s) "
-        "isolado(s) pela análise sintática.",
-    )
 
     consulta = ConsultaDeRegras(
         texto=_descrever_mudanca(arquivo, elementos),
         caminho=arquivo.caminho,
         linguagem=linguagem or "",
+        repositorio=repositorio,
     )
     regras = conhecimento.buscar_regras_relevantes(consulta)
     if not regras:
@@ -166,7 +224,9 @@ def _revisar_arquivo(
             "rag",
             f"`{arquivo.caminho}`: nenhuma regra aplicável — arquivo ignorado.",
         )
-        return None
+        # Sem regras não há revisão a apresentar, mas um erro de sintaxe segue
+        # sendo informação útil ao autor e não pode ser descartado junto.
+        return aviso
 
     identificadores = ", ".join(regra.identificador for regra in regras)
     _anunciar(
@@ -191,13 +251,20 @@ def _revisar_arquivo(
             "erro",
             f"`{arquivo.caminho}`: o modelo não pôde ser consultado.",
         )
-        return _MODELO_INDISPONIVEL
+        return _combinar(aviso, _MODELO_INDISPONIVEL)
 
     comentario = montar_comentario_de_avaliacao(resposta)
     _anunciar(
         observador, "avaliado", f"`{arquivo.caminho}`: avaliação concluída."
     )
-    return comentario
+    return _combinar(aviso, comentario)
+
+
+def _combinar(aviso: str | None, comentario: str) -> str:
+    """Junta o aviso de sintaxe, quando houver, ao resultado da revisão."""
+    if aviso is None:
+        return comentario
+    return f"{aviso}\n\n{comentario}"
 
 
 def _anunciar(observador: ObservadorPort, etapa: str, descricao: str) -> None:

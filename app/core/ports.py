@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 from app.core.models import (
     ArquivoAlterado,
     ConsultaDeRegras,
+    DocumentoSDD,
     EventoDeProgresso,
     PullRequest,
     RegraArquitetural,
@@ -39,6 +40,18 @@ class RepositorioPort(ABC):
         """Publica um comentário de feedback no Pull Request."""
         ...
 
+    @abstractmethod
+    def obter_documento_sdd(self, pr: PullRequest) -> DocumentoSDD:
+        """Lê o documento de especificação versionado no repositório revisado.
+
+        As regras arquiteturais pertencem à organização, não à ferramenta: cada
+        repositório declara as suas, versionadas junto ao código. É isso que
+        torna a alteração de uma regra um Pull Request auditável como outro
+        qualquer, e o que permite que organizações distintas sejam avaliadas por
+        critérios distintos pela mesma ferramenta.
+        """
+        ...
+
 
 class ConhecimentoPort(ABC):
     """Contrato para recuperar as regras arquiteturais relevantes.
@@ -47,6 +60,20 @@ class ConhecimentoPort(ABC):
     importam para este código". Como isso é resolvido (embeddings, Qdrant) é
     problema do adaptador, invisível aqui.
     """
+
+    @abstractmethod
+    def sincronizar_regras(
+        self, repositorio: str, regras: list[RegraArquitetural]
+    ) -> None:
+        """Garante que a base reflita as regras vigentes daquele repositório.
+
+        Como cada repositório traz o seu próprio documento de especificação, a
+        base precisa ser atualizada antes de qualquer consulta. Cabe ao
+        adaptador evitar trabalho desnecessário quando as regras não mudaram —
+        recalcular representações vetoriais a cada Pull Request seria custoso e
+        inútil.
+        """
+        ...
 
     @abstractmethod
     def buscar_regras_relevantes(

@@ -11,6 +11,7 @@ import pytest
 from app.core.models import (
     ArquivoAlterado,
     ConsultaDeRegras,
+    DocumentoSDD,
     PullRequest,
     RegraArquitetural,
 )
@@ -19,9 +20,37 @@ from app.core.pipeline import analisar_pull_request, revisar_pull_request
 
 # --- Dublês das portas ------------------------------------------------------
 
+# Documento de especificação mínimo e válido, como viria do repositório
+# revisado. Os testes exercitam o caminho real: o pipeline lê o SDD, interpreta
+# o markdown e sincroniza a base antes de qualquer revisão.
+REGRA_EM_MARKDOWN = """---
+id: SEG-001
+titulo: Sem segredos no código
+categoria: seguranca
+severidade: obrigatoria
+status: ativa
+linguagens: [python]
+aplica_se_a: ["**/*.py"]
+---
+
+## Regra
+
+Segredos não podem ser escritos diretamente no código.
+
+## Motivação
+
+Um segredo versionado permanece no histórico do controle de versão.
+"""
+
+
 class RepositorioFalso:
-    def __init__(self, arquivos):
+    def __init__(self, arquivos, sdd=None):
         self._arquivos = arquivos
+        self._sdd = (
+            sdd
+            if sdd is not None
+            else DocumentoSDD(regras={"SEG-001-sem-segredos.md": REGRA_EM_MARKDOWN})
+        )
         self.comentario_publicado = None
 
     def obter_arquivos_alterados(self, pr):
@@ -30,6 +59,9 @@ class RepositorioFalso:
     def publicar_comentario(self, pr, texto):
         self.comentario_publicado = texto
 
+    def obter_documento_sdd(self, pr):
+        return self._sdd
+
 
 class ConhecimentoFalso:
     """Devolve sempre as mesmas regras, e registra as consultas recebidas."""
@@ -37,6 +69,10 @@ class ConhecimentoFalso:
     def __init__(self, regras):
         self._regras = regras
         self.consultas = []
+        self.sincronizacoes = []
+
+    def sincronizar_regras(self, repositorio, regras):
+        self.sincronizacoes.append((repositorio, regras))
 
     def buscar_regras_relevantes(self, consulta):
         self.consultas.append(consulta)
@@ -144,7 +180,12 @@ ARQUIVO_INVALIDO = ArquivoAlterado(
 )
 
 
-def test_arquivo_python_invalido_e_reportado_como_erro_de_sintaxe():
+def test_arquivo_python_invalido_e_reportado_e_ainda_revisado():
+    """O erro de sintaxe é avisado, mas não cancela a revisão do arquivo.
+
+    Um caractere faltando em uma linha não invalida as demais: deixar de apontar
+    uma violação real por causa disso seria uma troca ruim.
+    """
     repo = RepositorioFalso([ARQUIVO_INVALIDO])
     llm = LLMFalso(RESPOSTA_COM_VIOLACAO)
 
@@ -154,8 +195,33 @@ def test_arquivo_python_invalido_e_reportado_como_erro_de_sintaxe():
 
     assert "Erro de sintaxe" in comentario
     assert "app/x.py" in comentario
-    # Codigo invalido nao tem arquitetura a avaliar: o modelo nao e acionado.
-    assert llm.prompt_recebido is None
+    # A revisão prosseguiu: o modelo foi consultado e a violação foi apontada.
+    assert llm.prompt_recebido is not None
+    assert "SEG-001" in comentario
+
+
+def test_sem_esqueleto_a_consulta_usa_as_linhas_do_diff():
+    """Sem AST, a recuperação de regras se apoia no diff, e não fica vazia."""
+    conhecimento = ConhecimentoFalso([REGRA_SEG])
+    analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        RepositorioFalso([ARQUIVO_INVALIDO]),
+        conhecimento,
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+    (consulta,) = conhecimento.consultas
+    assert "def quebrado(" in consulta.texto
+
+
+def test_erro_de_sintaxe_e_reportado_mesmo_sem_regras_aplicaveis():
+    """Sem revisão a apresentar, o aviso de sintaxe ainda é informação útil."""
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        RepositorioFalso([ARQUIVO_INVALIDO]),
+        ConhecimentoFalso([]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+    assert "Erro de sintaxe" in comentario
 
 
 def test_erro_de_sintaxe_nao_derruba_os_demais_arquivos():
@@ -181,6 +247,73 @@ def test_erro_de_sintaxe_e_anunciado_ao_observador():
         observador,
     )
     assert "sintaxe" in observador.etapas
+
+
+def test_regras_sao_lidas_do_repositorio_revisado():
+    """O SDD pertence à organização: as regras vêm do repositório sob revisão."""
+    repo = RepositorioFalso([ARQUIVO_PY])
+    conhecimento = ConhecimentoFalso([REGRA_SEG])
+
+    analisar_pull_request(
+        PullRequest("dono/repo", 1), repo, conhecimento, LLMFalso(RESPOSTA_COM_VIOLACAO)
+    )
+
+    (repositorio, regras) = conhecimento.sincronizacoes[0]
+    assert repositorio == "dono/repo"
+    assert [regra.identificador for regra in regras] == ["SEG-001"]
+
+
+def test_consulta_identifica_o_repositorio_de_origem():
+    """Cada organização consulta as suas regras, não as de outra."""
+    conhecimento = ConhecimentoFalso([REGRA_SEG])
+    analisar_pull_request(
+        PullRequest("outra/org", 9),
+        RepositorioFalso([ARQUIVO_PY]),
+        conhecimento,
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+    (consulta,) = conhecimento.consultas
+    assert consulta.repositorio == "outra/org"
+
+
+def test_repositorio_sem_sdd_nao_e_revisado():
+    """Sem regras declaradas não há o que cobrar — e o autor é avisado disso."""
+    repo = RepositorioFalso([ARQUIVO_PY], sdd=DocumentoSDD(regras={}))
+    llm = LLMFalso(RESPOSTA_COM_VIOLACAO)
+
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1), repo, ConhecimentoFalso([REGRA_SEG]), llm
+    )
+
+    assert "não possui um documento de especificação" in comentario
+    assert llm.prompt_recebido is None
+
+
+def test_sdd_invalido_nao_derruba_a_revisao():
+    """Documento malformado é registrado, sem devolver erro técnico ao autor."""
+    quebrado = DocumentoSDD(regras={"ruim.md": "isto não tem frontmatter"})
+    repo = RepositorioFalso([ARQUIVO_PY], sdd=quebrado)
+
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+
+    assert "documento de especificação" in comentario
+
+
+def test_regras_descontinuadas_sao_ignoradas():
+    descontinuada = REGRA_EM_MARKDOWN.replace("status: ativa", "status: descontinuada")
+    repo = RepositorioFalso([ARQUIVO_PY], sdd=DocumentoSDD(regras={"x.md": descontinuada}))
+    conhecimento = ConhecimentoFalso([REGRA_SEG])
+
+    analisar_pull_request(
+        PullRequest("dono/repo", 1), repo, conhecimento, LLMFalso(RESPOSTA_COM_VIOLACAO)
+    )
+
+    assert conhecimento.sincronizacoes == []
 
 
 class ObservadorFalso:
@@ -210,6 +343,7 @@ def test_pipeline_anuncia_as_etapas_na_ordem():
     )
 
     assert observador.etapas == [
+        "sdd",       # as regras vêm do repositório revisado, antes de tudo
         "arquivos",
         "ast",
         "rag",

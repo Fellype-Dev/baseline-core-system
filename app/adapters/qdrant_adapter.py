@@ -13,6 +13,8 @@ Os embeddings são gerados localmente pelo fastembed (o SDD é documento interno
 não faz sentido enviá-lo a uma API externa).
 """
 
+import hashlib
+import re
 from dataclasses import asdict
 
 from fastembed import TextEmbedding
@@ -54,13 +56,54 @@ class QdrantAdapter(ConhecimentoPort):
         # justificativa em `_texto_para_busca`. Precisa ser o MESMO valor usado
         # na indexação: mudar isto exige reindexar o SDD.
         self._indexar_exemplos = indexar_exemplos
+        # Assinatura das regras já indexadas, por coleção, para não repetir a
+        # geração de vetores quando o documento de especificação não mudou.
+        self._assinaturas: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Operação de ciclo de vida do adaptador (fora do contrato da porta):
     # indexar o SDD. Chamada por um script de setup, nunca pelo núcleo.
     # ------------------------------------------------------------------
-    def indexar_regras(self, regras: list[RegraArquitetural]) -> None:
+    def sincronizar_regras(
+        self, repositorio: str, regras: list[RegraArquitetural]
+    ) -> None:
+        """Atualiza a coleção daquele repositório apenas se as regras mudaram.
+
+        Gerar representações vetoriais é a operação mais cara do fluxo, e o
+        documento de especificação muda raramente — muito menos que a frequência
+        de Pull Requests. Comparar uma assinatura do conteúdo evita repetir esse
+        trabalho a cada revisão.
+        """
+        colecao = self._colecao_de(repositorio)
+        assinatura = self._assinatura(regras)
+
+        if self._assinaturas.get(colecao) == assinatura:
+            return
+
+        self.indexar_regras(regras, colecao)
+        self._assinaturas[colecao] = assinatura
+
+    @staticmethod
+    def _colecao_de(repositorio: str) -> str:
+        """Nome de coleção derivado do repositório, isolando cada organização."""
+        if not repositorio:
+            return "regras_arquiteturais"
+        seguro = re.sub(r"[^a-zA-Z0-9]+", "_", repositorio).strip("_").lower()
+        return f"regras_{seguro}"
+
+    def _assinatura(self, regras: list[RegraArquitetural]) -> str:
+        """Resume o conteúdo das regras para detectar alterações."""
+        conteudo = " ".join(
+            self._texto_para_busca(regra) + repr(asdict(regra))
+            for regra in sorted(regras, key=lambda r: r.identificador)
+        )
+        return hashlib.sha256(conteudo.encode("utf-8")).hexdigest()
+
+    def indexar_regras(
+        self, regras: list[RegraArquitetural], colecao: str | None = None
+    ) -> None:
         """Gera os embeddings das regras e as armazena no Qdrant (C3 + C4)."""
+        colecao = colecao or self._colecao
         if not regras:
             return
 
@@ -72,10 +115,10 @@ class QdrantAdapter(ConhecimentoPort):
         dimensao = len(vetores[0])
 
         # Reindexação começa do zero: o SDD é a fonte da verdade.
-        if self._cliente.collection_exists(self._colecao):
-            self._cliente.delete_collection(self._colecao)
+        if self._cliente.collection_exists(colecao):
+            self._cliente.delete_collection(colecao)
         self._cliente.create_collection(
-            collection_name=self._colecao,
+            collection_name=colecao,
             vectors_config=models.VectorParams(
                 size=dimensao,
                 distance=models.Distance.COSINE,
@@ -83,7 +126,7 @@ class QdrantAdapter(ConhecimentoPort):
         )
 
         self._cliente.upsert(
-            collection_name=self._colecao,
+            collection_name=colecao,
             points=[
                 models.PointStruct(
                     id=indice,
@@ -107,7 +150,10 @@ class QdrantAdapter(ConhecimentoPort):
         filtro de aplicabilidade descarta as que não valem para aquele arquivo
         (outra linguagem ou fora do escopo de caminho declarado no SDD).
         """
-        if not self._cliente.collection_exists(self._colecao):
+        # Cada repositório tem a sua coleção: as regras consultadas são as que
+        # aquela organização declarou, e não as de outra.
+        colecao = self._colecao_de(consulta.repositorio)
+        if not self._cliente.collection_exists(colecao):
             return []
 
         vetor_consulta = next(iter(self._modelo.embed([consulta.texto]))).tolist()
@@ -115,7 +161,7 @@ class QdrantAdapter(ConhecimentoPort):
         # Busca mais candidatas do que o necessário, porque parte delas será
         # descartada pelo filtro de aplicabilidade logo abaixo.
         resposta = self._cliente.query_points(
-            collection_name=self._colecao,
+            collection_name=colecao,
             query=vetor_consulta,
             limit=self._quantidade * self._FATOR_DE_SOBREBUSCA,
         )

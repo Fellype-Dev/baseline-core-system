@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.core.models import DocumentoSDD
 from app.core.ports import RepositorioPort
 
 
@@ -18,6 +19,9 @@ def test_implementacao_completa_satisfaz_o_contrato():
 
         def publicar_comentario(self, pr, texto):
             pass
+
+        def obter_documento_sdd(self, pr):
+            return DocumentoSDD(regras={})
 
     fake = RepositorioFake()
     assert isinstance(fake, RepositorioPort)
