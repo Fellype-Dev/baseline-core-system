@@ -32,6 +32,7 @@ from app.core.models import (
     ConsultaDeRegras,
     EventoDeProgresso,
     PullRequest,
+    RegraArquitetural,
 )
 from app.core.observador import ObservadorNulo
 from app.core.ports import (
@@ -46,7 +47,7 @@ from app.services.ast_service import (
     identificar_linguagem,
 )
 from app.services.diff_service import linhas_alteradas
-from app.services.prompt_service import montar_prompt
+from app.services.prompt_service import montar_prompt, montar_prompt_de_estrutura
 from app.services.resultado_service import (
     formatar_erro_de_sintaxe,
     montar_comentario_de_avaliacao,
@@ -98,13 +99,18 @@ def analisar_pull_request(
 
     # As regras vêm do repositório revisado, e não da ferramenta: cada
     # organização declara as suas, versionadas junto ao próprio código.
-    if not _carregar_regras_do_repositorio(pr, repositorio, conhecimento, observador):
+    regras = _carregar_regras_do_repositorio(pr, repositorio, conhecimento, observador)
+    if regras is None:
         return (
             "# Revisão Arquitetural\n\n"
             "Este repositório não possui um documento de especificação "
             "arquitetural em `sdd/`, ou nenhuma de suas regras está ativa. "
             "Nenhuma verificação foi realizada."
         )
+
+    blocos_de_estrutura = _revisar_estrutura(
+        pr, repositorio, llm, regras, observador
+    )
 
     arquivos = repositorio.obter_arquivos_alterados(pr)
     _anunciar(
@@ -113,7 +119,7 @@ def analisar_pull_request(
         f"{len(arquivos)} arquivo(s) alterado(s) obtido(s) do repositório.",
     )
 
-    blocos: list[str] = []
+    blocos: list[str] = list(blocos_de_estrutura)
     for arquivo in arquivos:
         comentario = _revisar_arquivo(
             arquivo, pr.repositorio, conhecimento, llm, observador
@@ -137,38 +143,92 @@ def _carregar_regras_do_repositorio(
     repositorio: RepositorioPort,
     conhecimento: ConhecimentoPort,
     observador: ObservadorPort,
-) -> bool:
-    """Lê o SDD do repositório e sincroniza a base. Diz se há regras a cobrar.
+) -> list[RegraArquitetural] | None:
+    """Lê o SDD do repositório e sincroniza a base. None se não há o que cobrar.
 
     Um documento malformado não derruba a revisão: o problema é registrado e o
     Pull Request segue sem apontamentos, em vez de falhar silenciosamente ou de
     devolver um erro técnico ao autor, que não é quem pode corrigi-lo.
+
+    Só as regras de escopo de arquivo vão para a busca semântica. As estruturais
+    são poucas e valem para o repositório inteiro: não há relevância a calcular,
+    e indexá-las faria com que aparecessem nas consultas por arquivo.
     """
     documento = repositorio.obter_documento_sdd(pr)
     if documento.vazio:
         _anunciar(
             observador, "sdd", "O repositório não declara regras arquiteturais."
         )
-        return False
+        return None
 
     try:
         regras = interpretar_sdd(documento.regras, documento.configuracao)
     except ErroDeSDD:
         _log.exception("Documento de especificação inválido em %s.", pr.repositorio)
         _anunciar(observador, "erro", "Documento de especificação inválido.")
-        return False
+        return None
 
     if not regras:
         _anunciar(observador, "sdd", "Nenhuma regra ativa no documento.")
-        return False
+        return None
 
-    conhecimento.sincronizar_regras(pr.repositorio, regras)
+    de_arquivo = [regra for regra in regras if regra.escopo == "arquivo"]
+    conhecimento.sincronizar_regras(pr.repositorio, de_arquivo)
     _anunciar(
         observador,
         "sdd",
         f"{len(regras)} regra(s) ativa(s) carregada(s) de `{pr.repositorio}`.",
     )
-    return True
+    return regras
+
+
+def _revisar_estrutura(
+    pr: PullRequest,
+    repositorio: RepositorioPort,
+    llm: LLMPort,
+    regras: list[RegraArquitetural],
+    observador: ObservadorPort,
+) -> list[str]:
+    """Avalia a organização de diretórios uma vez por Pull Request.
+
+    Devolve uma lista para que o chamador some ao restante do parecer sem
+    precisar tratar ausência: sem regras estruturais, ou sem diretórios criados,
+    o resultado é simplesmente vazio.
+    """
+    estruturais = [regra for regra in regras if regra.escopo == "estrutura"]
+    if not estruturais:
+        return []
+
+    estrutura = repositorio.obter_estrutura(pr)
+    if not estrutura.diretorios_novos:
+        _anunciar(
+            observador, "estrutura", "Nenhum diretório novo nesta submissão."
+        )
+        return []
+
+    _anunciar(
+        observador,
+        "estrutura",
+        f"{len(estrutura.diretorios_novos)} diretório(s) criado(s): "
+        + ", ".join(f"`{d}`" for d in estrutura.diretorios_novos),
+    )
+
+    prompt = montar_prompt_de_estrutura(estrutura, estruturais)
+    try:
+        resposta = llm.avaliar(prompt)
+    except Exception:
+        _log.exception("Falha ao avaliar a estrutura de %s.", pr.repositorio)
+        _anunciar(observador, "erro", "Estrutura não pôde ser avaliada.")
+        return []
+
+    comentario = montar_comentario_de_avaliacao(
+        resposta, frozenset(regra.identificador for regra in estruturais)
+    )
+    if "✅" in comentario:
+        # Conformidade estrutural não precisa ocupar espaço no parecer.
+        return []
+
+    return [f"**Estrutura do repositório**\n\n{comentario}"]
 
 
 def _revisar_arquivo(
@@ -253,7 +313,11 @@ def _revisar_arquivo(
         )
         return _combinar(aviso, _MODELO_INDISPONIVEL)
 
-    comentario = montar_comentario_de_avaliacao(resposta)
+    # Só as regras efetivamente enviadas podem ser apontadas: o que estiver fora
+    # desse conjunto é alucinação ou indução vinda do próprio código analisado.
+    comentario = montar_comentario_de_avaliacao(
+        resposta, frozenset(regra.identificador for regra in regras)
+    )
     _anunciar(
         observador, "avaliado", f"`{arquivo.caminho}`: avaliação concluída."
     )

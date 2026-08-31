@@ -34,6 +34,42 @@ _CERCA_DE_CODIGO = re.compile(
     r"^```(?:json)?\s*(?P<conteudo>.*?)\s*```$", re.DOTALL
 )
 
+# Padrões usados no saneamento do texto que o modelo devolve. A ordem de
+# aplicação importa: o link markdown é resolvido antes da remoção de URLs, para
+# que "[texto](endereço)" preserve o texto em vez de virar "[texto](...)".
+_TAG_HTML = re.compile(r"<[^>]*>")
+_LINK_MARKDOWN = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_URL_CRUA = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# O comentário é publicado no Pull Request; um texto muito longo prejudica a
+# leitura e não acrescenta informação útil ao autor.
+_LIMITE_DE_TEXTO = 1200
+
+
+def sanear_texto_do_modelo(texto: str) -> str:
+    """Neutraliza o texto devolvido pelo modelo antes de publicá-lo.
+
+    O comentário é renderizado como markdown na página do Pull Request, e o
+    conteúdo desse comentário é produzido por um modelo que leu código de origem
+    não confiável. Sem saneamento, bastaria induzir o modelo a escrever um link
+    ou um bloco HTML para transformar o parecer em vetor de phishing dentro de
+    uma página legítima do repositório.
+
+    O saneamento é aplicado à saída, e não à entrada, porque é na publicação que
+    o texto ganha poder: ali ele deixa de ser dado e passa a ser interface.
+    """
+    limpo = _TAG_HTML.sub("", texto)
+    limpo = _LINK_MARKDOWN.sub(r"\1", limpo)
+    limpo = _URL_CRUA.sub("[link removido]", limpo)
+    # Cercas de código quebrariam a formatação do comentário ao fechar blocos
+    # que o sistema abriu.
+    limpo = limpo.replace("```", "'''")
+    limpo = limpo.strip()
+
+    if len(limpo) > _LIMITE_DE_TEXTO:
+        limpo = limpo[:_LIMITE_DE_TEXTO].rstrip() + "…"
+    return limpo
+
 
 def interpretar_violacoes(resposta_llm: str) -> list[Violacao]:
     """Extrai as violações do texto devolvido pelo modelo.
@@ -66,6 +102,27 @@ def interpretar_violacoes(resposta_llm: str) -> list[Violacao]:
     return violacoes
 
 
+def descartar_regras_desconhecidas(
+    violacoes: list[Violacao], identificadores_validos: frozenset[str]
+) -> list[Violacao]:
+    """Remove violações que citam regras não enviadas ao modelo.
+
+    O modelo só pode apontar aquilo que lhe foi dado a verificar. Um
+    identificador fora desse conjunto significa que ele inventou a regra ou que
+    foi induzido a citá-la por texto contido no próprio código sob análise.
+
+    A verificação é uma comparação de conjuntos, e não uma avaliação do modelo:
+    nenhum texto escrito no Pull Request consegue contorná-la. É o mesmo
+    princípio do filtro de aplicabilidade — onde é possível decidir de forma
+    determinística, não se pergunta ao modelo.
+    """
+    return [
+        violacao
+        for violacao in violacoes
+        if violacao.regra.strip() in identificadores_validos
+    ]
+
+
 def formatar_comentario(violacoes: list[Violacao]) -> str:
     """Renderiza as violações como o comentário em markdown do PR.
 
@@ -85,11 +142,14 @@ def formatar_comentario(violacoes: list[Violacao]) -> str:
     partes = [f"## 🔴 Revisão arquitetural — {quantidade} {plural}\n"]
 
     for violacao in violacoes:
-        titulo = f"### {violacao.regra}"
-        if violacao.elemento:
-            titulo += f" — em `{violacao.elemento}`"
+        # Identificador, elemento e explicação vêm do modelo e são saneados
+        # antes de virarem markdown publicado no Pull Request.
+        titulo = f"### {sanear_texto_do_modelo(violacao.regra)}"
+        elemento = sanear_texto_do_modelo(violacao.elemento)
+        if elemento:
+            titulo += f" — em `{elemento}`"
         partes.append(titulo)
-        partes.append(violacao.explicacao)
+        partes.append(sanear_texto_do_modelo(violacao.explicacao))
 
     return "\n\n".join(partes)
 
@@ -112,11 +172,17 @@ def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
     )
 
 
-def montar_comentario_de_avaliacao(resposta_llm: str) -> str:
+def montar_comentario_de_avaliacao(
+    resposta_llm: str, identificadores_validos: frozenset[str] | None = None
+) -> str:
     """Feature D3 completa: interpreta a resposta do modelo e formata o comentário.
 
     Em caso de resposta irrecuperável, devolve um comentário honesto de falha —
     sem inventar violações — para que o revisor humano assuma.
+
+    Quando `identificadores_validos` é informado, apontamentos que citem regras
+    fora desse conjunto são descartados. O parâmetro é opcional para preservar
+    os chamadores que interpretam a resposta sem esse contexto.
     """
     try:
         violacoes = interpretar_violacoes(resposta_llm)
@@ -127,6 +193,10 @@ def montar_comentario_de_avaliacao(resposta_llm: str) -> str:
             "nenhuma análise automática é apresentada. Um revisor humano deve "
             "avaliar este Pull Request."
         )
+
+    if identificadores_validos is not None:
+        violacoes = descartar_regras_desconhecidas(violacoes, identificadores_validos)
+
     return formatar_comentario(violacoes)
 
 
