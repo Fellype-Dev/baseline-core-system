@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.core.models import DocumentoSDD
+from app.core.models import DocumentoSDD, EstruturaDoRepositorio
 from app.core.ports import RepositorioPort
 
 
@@ -22,6 +22,9 @@ def test_implementacao_completa_satisfaz_o_contrato():
 
         def obter_documento_sdd(self, pr):
             return DocumentoSDD(regras={})
+
+        def obter_estrutura(self, pr):
+            return EstruturaDoRepositorio(diretorios=(), diretorios_novos=())
 
     fake = RepositorioFake()
     assert isinstance(fake, RepositorioPort)

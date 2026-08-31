@@ -11,11 +11,27 @@ o núcleo nunca importa daqui. A dependência aponta para dentro.
 
 from github import Auth, Github, GithubException
 
-from app.core.models import ArquivoAlterado, DocumentoSDD, PullRequest
+from app.core.models import (
+    ArquivoAlterado,
+    DocumentoSDD,
+    EstruturaDoRepositorio,
+    PullRequest,
+)
 from app.core.ports import RepositorioPort
 
 # Diretório, no repositório revisado, onde a organização declara suas regras.
 DIRETORIO_SDD = "sdd"
+
+
+def _diretorios_de(caminho: str) -> set[str]:
+    """Devolve todos os diretórios ancestrais de um caminho de arquivo.
+
+    Para "app/core/pipeline.py", devolve {"app", "app/core"}. É o que permite
+    reconhecer que uma submissão criou um diretório inteiro, e não apenas um
+    arquivo dentro de um diretório que já existia.
+    """
+    partes = caminho.replace("\\", "/").split("/")[:-1]
+    return {"/".join(partes[: indice + 1]) for indice in range(len(partes))}
 
 
 class GitHubAdapter(RepositorioPort):
@@ -71,6 +87,37 @@ class GitHubAdapter(RepositorioPort):
         # análise sintática falhar já na primeira linha, mesmo em código válido.
         # O tratamento é indiferente para arquivos sem a marca.
         return conteudo.decoded_content.decode("utf-8-sig")
+
+    def obter_estrutura(self, pr: PullRequest) -> EstruturaDoRepositorio:
+        """Monta a árvore de diretórios e identifica os que o PR cria.
+
+        A árvore vem do branch padrão — o estado já aprovado — e os diretórios
+        novos são deduzidos dos caminhos alterados no Pull Request. Essa
+        diferença é o que permite apontar apenas o que a submissão introduz.
+        """
+        repositorio = self._cliente.get_repo(pr.repositorio)
+        existentes = self._diretorios_do_branch_padrao(repositorio)
+
+        pull_request = repositorio.get_pull(pr.numero)
+        alterados: set[str] = set()
+        for arquivo in pull_request.get_files():
+            alterados.update(_diretorios_de(arquivo.filename))
+
+        return EstruturaDoRepositorio(
+            diretorios=tuple(sorted(existentes)),
+            diretorios_novos=tuple(sorted(alterados - existentes)),
+        )
+
+    def _diretorios_do_branch_padrao(self, repositorio) -> set[str]:
+        """Lista os diretórios existentes no branch padrão do repositório."""
+        try:
+            arvore = repositorio.get_git_tree(
+                repositorio.default_branch, recursive=True
+            )
+        except GithubException:
+            return set()
+
+        return {item.path for item in arvore.tree if item.type == "tree"}
 
     def obter_documento_sdd(self, pr: PullRequest) -> DocumentoSDD:
         """Lê o diretório `sdd/` versionado no repositório revisado.

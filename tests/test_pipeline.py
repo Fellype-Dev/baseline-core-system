@@ -12,6 +12,7 @@ from app.core.models import (
     ArquivoAlterado,
     ConsultaDeRegras,
     DocumentoSDD,
+    EstruturaDoRepositorio,
     PullRequest,
     RegraArquitetural,
 )
@@ -44,12 +45,15 @@ Um segredo versionado permanece no histórico do controle de versão.
 
 
 class RepositorioFalso:
-    def __init__(self, arquivos, sdd=None):
+    def __init__(self, arquivos, sdd=None, estrutura=None):
         self._arquivos = arquivos
         self._sdd = (
             sdd
             if sdd is not None
             else DocumentoSDD(regras={"SEG-001-sem-segredos.md": REGRA_EM_MARKDOWN})
+        )
+        self._estrutura = estrutura or EstruturaDoRepositorio(
+            diretorios=("app", "app/core"), diretorios_novos=()
         )
         self.comentario_publicado = None
 
@@ -61,6 +65,9 @@ class RepositorioFalso:
 
     def obter_documento_sdd(self, pr):
         return self._sdd
+
+    def obter_estrutura(self, pr):
+        return self._estrutura
 
 
 class ConhecimentoFalso:
@@ -314,6 +321,108 @@ def test_regras_descontinuadas_sao_ignoradas():
     )
 
     assert conhecimento.sincronizacoes == []
+
+
+# --- Regras de escopo estrutural --------------------------------------------
+
+REGRA_ESTRUTURAL_EM_MARKDOWN = """---
+id: ARQ-100
+titulo: Separação entre cliente e servidor
+categoria: arquitetura
+severidade: obrigatoria
+escopo: estrutura
+---
+
+## Regra
+
+O código de interface não deve residir dentro do diretório do servidor.
+
+## Motivação
+
+Aninhar o cliente no servidor confunde as fronteiras de implantação.
+"""
+
+SDD_COM_ESTRUTURAL = DocumentoSDD(
+    regras={
+        "SEG-001.md": REGRA_EM_MARKDOWN,
+        "ARQ-100.md": REGRA_ESTRUTURAL_EM_MARKDOWN,
+    }
+)
+
+RESPOSTA_ESTRUTURAL = json.dumps(
+    {
+        "violacoes": [
+            {
+                "regra": "ARQ-100",
+                "elemento": "server/frontend",
+                "explicacao": "interface dentro do servidor",
+            }
+        ]
+    }
+)
+
+
+def test_regra_estrutural_nao_vai_para_a_busca_semantica():
+    """Regras do repositório inteiro não têm relevância por arquivo a calcular."""
+    conhecimento = ConhecimentoFalso([REGRA_SEG])
+    analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        RepositorioFalso([ARQUIVO_PY], sdd=SDD_COM_ESTRUTURAL),
+        conhecimento,
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+    (_, indexadas) = conhecimento.sincronizacoes[0]
+    assert [r.identificador for r in indexadas] == ["SEG-001"]
+
+
+def test_diretorio_novo_e_avaliado_contra_regra_estrutural():
+    estrutura = EstruturaDoRepositorio(
+        diretorios=("server", "client"), diretorios_novos=("server/frontend",)
+    )
+    repo = RepositorioFalso([ARQUIVO_PY], sdd=SDD_COM_ESTRUTURAL, estrutura=estrutura)
+
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_ESTRUTURAL),
+    )
+
+    assert "Estrutura do repositório" in comentario
+    assert "ARQ-100" in comentario
+
+
+def test_sem_diretorio_novo_a_estrutura_nao_e_avaliada():
+    """Deriva anterior é contexto, não achado: repeti-la cansaria a equipe."""
+    estrutura = EstruturaDoRepositorio(
+        diretorios=("server", "server/frontend"), diretorios_novos=()
+    )
+    repo = RepositorioFalso([ARQUIVO_PY], sdd=SDD_COM_ESTRUTURAL, estrutura=estrutura)
+
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+
+    assert "Estrutura do repositório" not in comentario
+
+
+def test_sem_regra_estrutural_a_estrutura_nao_e_consultada():
+    estrutura = EstruturaDoRepositorio(
+        diretorios=("app",), diretorios_novos=("utils",)
+    )
+    repo = RepositorioFalso([ARQUIVO_PY], estrutura=estrutura)
+
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(RESPOSTA_COM_VIOLACAO),
+    )
+
+    assert "Estrutura do repositório" not in comentario
 
 
 class ObservadorFalso:

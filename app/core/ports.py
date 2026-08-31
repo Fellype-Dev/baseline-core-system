@@ -16,6 +16,7 @@ from app.core.models import (
     ArquivoAlterado,
     ConsultaDeRegras,
     DocumentoSDD,
+    EstruturaDoRepositorio,
     EventoDeProgresso,
     PullRequest,
     RegraArquitetural,
@@ -38,6 +39,15 @@ class RepositorioPort(ABC):
     @abstractmethod
     def publicar_comentario(self, pr: PullRequest, texto: str) -> None:
         """Publica um comentário de feedback no Pull Request."""
+        ...
+
+    @abstractmethod
+    def obter_estrutura(self, pr: PullRequest) -> EstruturaDoRepositorio:
+        """Descreve a organização de diretórios e o que o Pull Request cria.
+
+        Regras arquiteturais sobre onde o código deve residir não podem ser
+        verificadas olhando um arquivo por vez: precisam da visão do conjunto.
+        """
         ...
 
     @abstractmethod
