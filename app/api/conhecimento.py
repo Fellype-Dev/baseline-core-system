@@ -1,20 +1,4 @@
-"""
-Adaptador de ENTRADA: expõe o conteúdo do banco de conhecimento para inspeção.
 
-O banco vetorial é embarcado e, por isso, invisível: não há interface para ver o
-que está indexado nem para entender por que uma regra foi recuperada. Estas
-rotas tornam essa etapa observável.
-
-* `/conhecimento`         a página de inspeção;
-* `/conhecimento/dados`   o inventário do que está indexado;
-* `/conhecimento/buscar`  executa uma consulta semântica e devolve as pontuações.
-
-A busca exposta aqui NÃO descarta candidatas: ela mostra a lista completa com a
-similaridade de cada regra e se o filtro de aplicabilidade a aceitaria. É o que
-permite distinguir uma falha de recuperação (a regra certa ficou mal
-classificada) de uma falha de avaliação (a regra chegou ao modelo e ele não a
-apontou) — distinção que, sem isto, seria invisível.
-"""
 
 from dataclasses import asdict
 from pathlib import Path
@@ -33,7 +17,6 @@ _PAGINA = (
 
 
 class Consulta(BaseModel):
-    """Parâmetros de uma busca de inspeção."""
 
     texto: str
     caminho: str = ""
@@ -41,7 +24,6 @@ class Consulta(BaseModel):
 
 
 def criar_router_conhecimento(conhecimento: QdrantAdapter) -> APIRouter:
-    """Cria as rotas de inspeção do banco de conhecimento."""
     router = APIRouter(prefix="/conhecimento")
 
     @router.get("")
@@ -50,7 +32,6 @@ def criar_router_conhecimento(conhecimento: QdrantAdapter) -> APIRouter:
 
     @router.get("/dados")
     def dados() -> dict:
-        """Inventário do índice: estatísticas e as regras armazenadas."""
         return {
             "colecao": conhecimento.descrever_colecao(),
             "regras": [asdict(regra) for regra in conhecimento.listar_regras()],
@@ -58,14 +39,7 @@ def criar_router_conhecimento(conhecimento: QdrantAdapter) -> APIRouter:
 
     @router.post("/buscar")
     def buscar(consulta: Consulta) -> dict:
-        """Executa a busca semântica e devolve o ranking com as pontuações."""
-        # O contexto de arquivo é opcional: sem ele, mostramos apenas o ranking
-        # semântico; com ele, também se vê o que o filtro de aplicabilidade faria.
-        #
-        # A linguagem é deduzida do caminho quando não informada, como acontece
-        # no pipeline. Sem isso, informar apenas o caminho descartaria todas as
-        # regras (nenhuma casaria com uma linguagem vazia) e a tela sugeriria um
-        # comportamento que não é o real.
+
         contexto = None
         if consulta.caminho or consulta.linguagem:
             linguagem = consulta.linguagem or identificar_linguagem(consulta.caminho)

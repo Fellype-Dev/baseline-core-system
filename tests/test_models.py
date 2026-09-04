@@ -1,4 +1,3 @@
-"""Testes dos modelos de domínio (igualdade por valor e imutabilidade)."""
 
 import dataclasses
 

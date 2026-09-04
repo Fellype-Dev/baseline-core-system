@@ -1,31 +1,10 @@
-"""
-Métricas de eficácia da ferramenta.
 
-Compara o que a ferramenta APONTOU com o que o gabarito diz que ela DEVERIA ter
-apontado, e resume isso nos números que a QP7 do trabalho pede: precisão na
-detecção de desvios arquiteturais e mitigação de falsos positivos.
-
-A comparação é feita por CONJUNTO de identificadores de regra por caso. Ou seja,
-a pergunta respondida é "a ferramenta apontou a regra certa neste arquivo?", e
-não "ela apontou na linha certa" — granularidade de linha exigiria um gabarito
-por linha, e a unidade de decisão do produto é o arquivo.
-
-Lógica pura: sem rede, sem modelo, sem banco. Testável isoladamente.
-"""
 
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class ResultadoDeCaso:
-    """O que era esperado e o que foi detectado em um único caso do corpus.
-
-    Quando `erro` está preenchido, o caso NÃO foi avaliado (o modelo ficou
-    indisponível, a cota acabou). Esses casos são excluídos das métricas em vez
-    de contarem como falha de detecção: não conseguir perguntar ao modelo não é
-    a mesma coisa que o modelo ter errado, e misturar as duas coisas
-    contaminaria o resultado.
-    """
 
     nome: str
     esperadas: frozenset[str]
@@ -38,33 +17,27 @@ class ResultadoDeCaso:
 
     @property
     def verdadeiros_positivos(self) -> frozenset[str]:
-        """Regras corretamente apontadas."""
         return self.esperadas & self.detectadas
 
     @property
     def falsos_positivos(self) -> frozenset[str]:
-        """Regras apontadas que não deveriam ter sido — o ruído da ferramenta."""
         return self.detectadas - self.esperadas
 
     @property
     def falsos_negativos(self) -> frozenset[str]:
-        """Violações reais que passaram despercebidas."""
         return self.esperadas - self.detectadas
 
     @property
     def em_conformidade(self) -> bool:
-        """Diz se este caso é de código correto (nenhuma violação esperada)."""
         return not self.esperadas
 
     @property
     def acertou(self) -> bool:
-        """Diz se o caso saiu exatamente como o gabarito previa."""
         return self.esperadas == self.detectadas
 
 
 @dataclass(frozen=True)
 class Metricas:
-    """Resumo agregado de uma rodada de avaliação."""
 
     casos: int
     casos_exatos: int
@@ -77,12 +50,7 @@ class Metricas:
 
     @property
     def precisao(self) -> float:
-        """Dos apontamentos feitos, quantos estavam certos.
 
-        Quando a ferramenta não aponta nada, não há como estar errada: por
-        convenção o valor é 1.0. Isso não a beneficia indevidamente, porque a
-        revocação nesse caso vai a zero e o F1 acompanha.
-        """
         apontamentos = self.verdadeiros_positivos + self.falsos_positivos
         if apontamentos == 0:
             return 1.0
@@ -90,11 +58,7 @@ class Metricas:
 
     @property
     def revocacao(self) -> float:
-        """Das violações reais, quantas a ferramenta encontrou.
 
-        Sem nenhuma violação a encontrar no corpus, o valor é 1.0 por convenção
-        (não havia o que deixar passar).
-        """
         reais = self.verdadeiros_positivos + self.falsos_negativos
         if reais == 0:
             return 1.0
@@ -102,39 +66,26 @@ class Metricas:
 
     @property
     def f1(self) -> float:
-        """Média harmônica entre precisão e revocação."""
         if self.precisao + self.revocacao == 0:
             return 0.0
         return 2 * self.precisao * self.revocacao / (self.precisao + self.revocacao)
 
     @property
     def taxa_de_alarme_falso(self) -> float:
-        """Fração dos arquivos CORRETOS que receberam algum apontamento.
 
-        É a métrica mais sensível para adoção: uma ferramenta que reclama de
-        código correto é desligada pela equipe, por melhor que seja sua
-        revocação. Responde diretamente à QP7.
-        """
         if self.casos_em_conformidade == 0:
             return 0.0
         return self.casos_em_conformidade_com_alarme / self.casos_em_conformidade
 
     @property
     def acuracia_por_caso(self) -> float:
-        """Fração dos casos em que o conjunto apontado bateu exatamente."""
         if self.casos == 0:
             return 0.0
         return self.casos_exatos / self.casos
 
 
 def calcular(resultados: list[ResultadoDeCaso]) -> Metricas:
-    """Agrega os resultados dos casos em um único conjunto de métricas.
 
-    A agregação é por soma dos acertos e erros de todos os casos (micro-média),
-    e não pela média das precisões de cada caso. A micro-média dá peso
-    proporcional ao número de violações e lida naturalmente com os casos em
-    conformidade, onde não há nada a acertar.
-    """
     avaliados = [r for r in resultados if r.avaliado]
     em_conformidade = [r for r in avaliados if r.em_conformidade]
 
@@ -153,7 +104,6 @@ def calcular(resultados: list[ResultadoDeCaso]) -> Metricas:
 
 
 def formatar_relatorio(resultados: list[ResultadoDeCaso], metricas: Metricas) -> str:
-    """Monta o relatório em texto de uma rodada, caso a caso e no agregado."""
     linhas = ["=" * 72, "RESULTADO POR CASO", "=" * 72]
 
     for resultado in resultados:
@@ -201,5 +151,4 @@ def formatar_relatorio(resultados: list[ResultadoDeCaso], metricas: Metricas) ->
 
 
 def _conjunto(identificadores: frozenset[str]) -> str:
-    """Formata um conjunto de regras de forma estável (ordenada) para leitura."""
     return ", ".join(sorted(identificadores)) if identificadores else "(nenhuma)"

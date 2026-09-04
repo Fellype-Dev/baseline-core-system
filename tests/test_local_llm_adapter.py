@@ -1,9 +1,3 @@
-"""Testes do LocalLLMAdapter.
-
-Contrato e tradução rodam sem rede (a chamada HTTP é substituída por um dublê).
-O teste contra o modelo real fica marcado como `integracao` e é pulado quando o
-executor local não está no ar.
-"""
 
 import pytest
 import requests

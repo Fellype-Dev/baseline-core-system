@@ -1,20 +1,4 @@
-"""
-Teste manual do pipeline completo contra um PR REAL (sem webhook nem servidor).
 
-Chama o mesmo núcleo que o webhook chamaria, com os adaptadores reais montados
-no composition root (GitHub + Qdrant + Gemini). Serve para validar o fluxo AST →
-RAG → LLM de ponta a ponta antes de expor o serviço.
-
-Dois modos:
-    (padrão)   ENSAIO — lê o PR e imprime o comentário no terminal, sem postar.
-    --postar   PUBLICA o comentário no PR (escreve no GitHub).
-
-Uso:
-    venv/Scripts/python.exe scripts/testar_github.py <usuario/repo> <numero_pr> [--postar]
-
-Exemplo:
-    venv/Scripts/python.exe scripts/testar_github.py fellype/teste-pr 1
-"""
 
 import os
 import sys
@@ -37,9 +21,8 @@ def principal() -> None:
 
     pr = PullRequest(repositorio=argumentos[0], numero=int(argumentos[1]))
 
-    # Importar aqui (e não no topo) adia o carregamento pesado do modelo de
-    # embeddings do QdrantAdapter para depois da checagem de argumentos.
-    from main import conhecimento, llm, repositorio  # noqa: E402
+
+    from main import conhecimento, llm, repositorio 
 
     modo = "PUBLICANDO no PR" if postar else "ENSAIO (sem postar)"
     print(f"Revisando {pr.repositorio} PR #{pr.numero} — {modo}\n")
@@ -53,7 +36,6 @@ def principal() -> None:
             print("--- Comentário que SERIA publicado ---\n")
             print(comentario)
     finally:
-        # Libera o lock do banco embarcado (evita o traceback de shutdown).
         conhecimento.fechar()
 
 

@@ -1,29 +1,3 @@
-"""
-Pipeline de revisão: o encadeamento dos filtros (feature E1 do Conjunto E).
-
-Este é o caso de uso central do produto — o "miolo" que orquestra todos os
-filtros já construídos, na ordem do documento de arquitetura:
-
-    arquivos alterados (RepositorioPort)
-      └─ para cada arquivo:
-           identificar linguagem            (ast_service)
-           linhas alteradas do diff         (diff_service)
-           esqueleto dos elementos mudados  (ast_service)
-           regras aplicáveis                (ConhecimentoPort)
-           montar o prompt                  (prompt_service)
-           avaliar com o modelo             (LLMPort)
-           interpretar e formatar           (resultado_service)
-      └─ publicar o comentário agregado     (RepositorioPort)
-
-Repare que o pipeline recebe as PORTAS por parâmetro — nunca cria adaptadores.
-Quem monta os adaptadores concretos é o composition root (`main.py`). Assim o
-núcleo permanece testável com dublês, sem GitHub, sem Qdrant e sem LLM real.
-
-A resiliência mais fina (rodar fora do laço de eventos, política de novas
-tentativas, timeouts) é a feature E2; aqui já tratamos o caso mais comum de
-falha estrutural: um arquivo Python que não parseia cai para a revisão baseada
-apenas no diff, em vez de derrubar a revisão inteira.
-"""
 
 import logging
 
@@ -56,8 +30,7 @@ from app.services.sdd_service import ErroDeSDD, interpretar_sdd
 
 _log = logging.getLogger(__name__)
 
-# Bloco honesto usado quando o modelo não pôde avaliar um arquivo. Igual à
-# filosofia do resultado_service: nunca inventar um veredito — admitir a falha.
+
 _MODELO_INDISPONIVEL = (
     "## ⚠️ Revisão arquitetural indisponível para este arquivo\n\n"
     "O modelo de linguagem não pôde ser consultado desta vez. Um revisor "
@@ -72,7 +45,6 @@ def revisar_pull_request(
     llm: LLMPort,
     observador: ObservadorPort | None = None,
 ) -> None:
-    """Revisa o PR de ponta a ponta e publica o comentário com o resultado."""
     observador = observador or ObservadorNulo()
 
     comentario = analisar_pull_request(
@@ -90,11 +62,7 @@ def analisar_pull_request(
     llm: LLMPort,
     observador: ObservadorPort | None = None,
 ) -> str:
-    """Produz o texto do comentário da revisão, sem publicá-lo.
 
-    Separar a análise (que gera texto) da publicação (efeito colateral) deixa o
-    encadeamento testável: dá para verificar o comentário sem simular a postagem.
-    """
     observador = observador or ObservadorNulo()
 
     # As regras vêm do repositório revisado, e não da ferramenta: cada
@@ -144,16 +112,7 @@ def _carregar_regras_do_repositorio(
     conhecimento: ConhecimentoPort,
     observador: ObservadorPort,
 ) -> list[RegraArquitetural] | None:
-    """Lê o SDD do repositório e sincroniza a base. None se não há o que cobrar.
 
-    Um documento malformado não derruba a revisão: o problema é registrado e o
-    Pull Request segue sem apontamentos, em vez de falhar silenciosamente ou de
-    devolver um erro técnico ao autor, que não é quem pode corrigi-lo.
-
-    Só as regras de escopo de arquivo vão para a busca semântica. As estruturais
-    são poucas e valem para o repositório inteiro: não há relevância a calcular,
-    e indexá-las faria com que aparecessem nas consultas por arquivo.
-    """
     documento = repositorio.obter_documento_sdd(pr)
     if documento.vazio:
         _anunciar(
@@ -189,12 +148,7 @@ def _revisar_estrutura(
     regras: list[RegraArquitetural],
     observador: ObservadorPort,
 ) -> list[str]:
-    """Avalia a organização de diretórios uma vez por Pull Request.
 
-    Devolve uma lista para que o chamador some ao restante do parecer sem
-    precisar tratar ausência: sem regras estruturais, ou sem diretórios criados,
-    o resultado é simplesmente vazio.
-    """
     estruturais = [regra for regra in regras if regra.escopo == "estrutura"]
     if not estruturais:
         return []
@@ -225,7 +179,6 @@ def _revisar_estrutura(
         resposta, frozenset(regra.identificador for regra in estruturais)
     )
     if "✅" in comentario:
-        # Conformidade estrutural não precisa ocupar espaço no parecer.
         return []
 
     return [f"**Estrutura do repositório**\n\n{comentario}"]
@@ -238,18 +191,10 @@ def _revisar_arquivo(
     llm: LLMPort,
     observador: ObservadorPort,
 ) -> str | None:
-    """Revisa um único arquivo. Devolve o comentário, ou None se não há regra.
 
-    Quando nenhuma regra é aplicável ao arquivo, não faz sentido acionar o
-    modelo: o arquivo é simplesmente omitido da revisão.
-    """
     linguagem = identificar_linguagem(arquivo.caminho)
 
-    # Um arquivo que não parseia é REPORTADO, mas não deixa de ser revisado: a
-    # falha impede apenas a extração do esqueleto, e a revisão prossegue pelas
-    # linhas alteradas — o mesmo caminho já usado para linguagens sem suporte a
-    # análise sintática. Deixar de apontar uma violação real por causa de um
-    # caractere faltando seria uma troca ruim.
+
     erro_de_sintaxe = _erro_de_sintaxe(arquivo, linguagem)
     if erro_de_sintaxe is not None:
         aviso = formatar_erro_de_sintaxe(
@@ -284,8 +229,7 @@ def _revisar_arquivo(
             "rag",
             f"`{arquivo.caminho}`: nenhuma regra aplicável — arquivo ignorado.",
         )
-        # Sem regras não há revisão a apresentar, mas um erro de sintaxe segue
-        # sendo informação útil ao autor e não pode ser descartado junto.
+
         return aviso
 
     identificadores = ", ".join(regra.identificador for regra in regras)
@@ -302,9 +246,7 @@ def _revisar_arquivo(
     try:
         resposta = llm.avaliar(prompt)
     except Exception:
-        # Resiliência (E2): a falha de um arquivo não pode derrubar o PR inteiro.
-        # Não silenciamos (QUA-001): registramos o erro com stacktrace no log e
-        # devolvemos um bloco honesto no lugar do veredito.
+
         _log.exception("Falha ao avaliar %s com o modelo.", arquivo.caminho)
         _anunciar(
             observador,
@@ -313,8 +255,7 @@ def _revisar_arquivo(
         )
         return _combinar(aviso, _MODELO_INDISPONIVEL)
 
-    # Só as regras efetivamente enviadas podem ser apontadas: o que estiver fora
-    # desse conjunto é alucinação ou indução vinda do próprio código analisado.
+
     comentario = montar_comentario_de_avaliacao(
         resposta, frozenset(regra.identificador for regra in regras)
     )
@@ -325,19 +266,13 @@ def _revisar_arquivo(
 
 
 def _combinar(aviso: str | None, comentario: str) -> str:
-    """Junta o aviso de sintaxe, quando houver, ao resultado da revisão."""
     if aviso is None:
         return comentario
     return f"{aviso}\n\n{comentario}"
 
 
 def _anunciar(observador: ObservadorPort, etapa: str, descricao: str) -> None:
-    """Avisa o observador, sem deixar que isso afete a revisão.
 
-    Observabilidade é acessória: se o observador falhar (um navegador que se
-    desconectou no meio, por exemplo), a revisão do Pull Request precisa seguir
-    normalmente. Registramos a falha para não silenciá-la (QUA-001).
-    """
     try:
         observador.registrar(EventoDeProgresso(etapa=etapa, descricao=descricao))
     except Exception:
@@ -347,12 +282,7 @@ def _anunciar(observador: ObservadorPort, etapa: str, descricao: str) -> None:
 def _erro_de_sintaxe(
     arquivo: ArquivoAlterado, linguagem: str | None
 ) -> SyntaxError | None:
-    """Devolve o erro de sintaxe do arquivo, ou None se ele é válido.
 
-    Só faz sentido para linguagens que sabemos analisar e quando temos o
-    conteúdo completo: sem o arquivo inteiro, um trecho isolado do diff pareceria
-    inválido mesmo estando correto.
-    """
     if linguagem != "python" or not arquivo.conteudo:
         return None
 
@@ -364,12 +294,7 @@ def _erro_de_sintaxe(
 
 
 def _extrair_elementos_alterados(arquivo: ArquivoAlterado, linguagem: str | None):
-    """Extrai o esqueleto dos elementos que mudaram, quando isso é possível.
 
-    Só há AST para linguagens suportadas (hoje, Python) e quando temos o conteúdo
-    completo do arquivo. Arquivos inválidos já foram tratados antes desta função
-    (ver `_erro_de_sintaxe`), então aqui a análise não deve falhar.
-    """
     if linguagem != "python" or not arquivo.conteudo:
         return []
 
@@ -378,13 +303,7 @@ def _extrair_elementos_alterados(arquivo: ArquivoAlterado, linguagem: str | None
 
 
 def _descrever_mudanca(arquivo: ArquivoAlterado, elementos) -> str:
-    """Monta a consulta em linguagem descritiva para a busca de regras (RAG).
 
-    Sutileza registrada no projeto: a busca casa o que mudou contra regras
-    escritas em português, então a consulta deve ser DESCRITIVA, não código cru.
-    Quando há esqueleto AST, usamos as assinaturas (naturais e enxutas); sem ele,
-    caímos para as linhas adicionadas do diff, o melhor sinal disponível.
-    """
     if elementos:
         assinaturas = "; ".join(elemento.assinatura for elemento in elementos)
         return f"Alterações no arquivo {arquivo.caminho}. Elementos modificados: {assinaturas}"
@@ -394,11 +313,9 @@ def _descrever_mudanca(arquivo: ArquivoAlterado, elementos) -> str:
 
 
 def _linhas_adicionadas(diff: str) -> str:
-    """Extrai o texto das linhas adicionadas do diff (sem o '+' inicial)."""
     linhas = [
         linha[1:]
         for linha in diff.splitlines()
-        # '+' marca adição; '+++' é o cabeçalho do arquivo, que ignoramos.
         if linha.startswith("+") and not linha.startswith("+++")
     ]
     return " ".join(linhas)

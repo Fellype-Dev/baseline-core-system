@@ -1,39 +1,7 @@
-# Corpus de avaliação — o GABARITO da ferramenta.
-#
-# Cada caso descreve um arquivo como ele chegaria em um Pull Request, junto das
-# violações que a ferramenta DEVERIA apontar nele. É este arquivo que sustenta
-# os números do capítulo de Resultados: se o gabarito estiver errado, a métrica
-# mede a coisa errada.
-#
-# Campos de cada caso:
-#   nome      identificador curto do caso
-#   caminho   caminho SIMULADO no repositório. Importa: é ele que decide quais
-#             regras se aplicam (os globs `aplica_se_a` do SDD).
-#   esperado  lista de identificadores de regra que devem ser apontados.
-#             Lista VAZIA significa código em conformidade — nenhum apontamento
-#             é esperado, e qualquer apontamento conta como falso positivo.
-#   codigo    o conteúdo do arquivo.
-#
-# O diff é gerado automaticamente pelo executor, tratando o arquivo como recém
-# adicionado ao PR (todas as linhas marcadas como incluídas). Isso evita que um
-# diff escrito à mão vire mais uma fonte de erro na medição.
-#
-# Casos em conformidade são deliberadamente ~40% do corpus: sem eles, a precisão
-# ficaria inflada artificialmente e a QP7 ("mitigação de falsos positivos") não
-# teria como ser respondida.
+
 
 casos:
-  # ------------------------------------------------------------------
-  # Casos com violação
-  # ------------------------------------------------------------------
 
-  # Correção do corpus (2ª rodada): a primeira versão deste caso instanciava o
-  # adaptador com `GeminiAdapter(api_key="chave")`. Aquele literal atribuído a
-  # `api_key` fazia o caso violar TAMBÉM a SEG-001, sem que o gabarito
-  # declarasse isso — a ferramenta apontava a segunda violação e era penalizada
-  # por estar certa. Um caso deve isolar a regra que pretende exercitar; a
-  # instanciação sem argumentos preserva a violação de ARQ-001 (o núcleo
-  # importando um adaptador) e remove o ruído.
   - nome: nucleo_importa_adaptador
     caminho: app/core/pipeline.py
     esperado: [ARQ-001]

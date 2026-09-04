@@ -1,4 +1,3 @@
-"""Testes da leitura do SDD (frontmatter YAML + seções markdown, um arquivo por regra)."""
 
 from pathlib import Path
 

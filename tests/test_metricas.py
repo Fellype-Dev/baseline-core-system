@@ -1,4 +1,3 @@
-"""Testes das métricas de avaliação (lógica pura, sem modelo nem rede)."""
 
 from avaliacao.metricas import ResultadoDeCaso, calcular
 

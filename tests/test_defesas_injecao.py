@@ -1,10 +1,3 @@
-"""Testes das defesas contra manipulação por conteúdo não confiável.
-
-O código revisado e o documento de especificação são escritos por terceiros e
-alcançam tanto o prompt quanto o comentário publicado. Estes testes cobrem as
-barreiras que não dependem do modelo — comparações e transformações
-determinísticas, que texto nenhum no Pull Request consegue contornar.
-"""
 
 import pytest
 

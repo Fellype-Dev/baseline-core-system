@@ -1,9 +1,4 @@
-"""
-Script utilitário: lista os modelos do Gemini disponíveis na sua conta
-que suportam geração de texto. Útil para conferir o nome exato do modelo.
 
-Uso:  venv/Scripts/python.exe listar_modelos.py
-"""
 
 import google.generativeai as genai
 

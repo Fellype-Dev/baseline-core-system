@@ -1,23 +1,3 @@
-"""
-Serviço de interpretação do resultado da avaliação (feature D3 do Conjunto D).
-
-Fecha o ciclo do Motor LLM: pega o TEXTO devolvido pelo modelo (via `LLMPort`) e
-o transforma no comentário que será postado no Pull Request. Duas etapas:
-
-1. **Interpretar** — extrair do texto o JSON `{"violacoes": [...]}` e convertê-lo
-   em objetos `Violacao` do domínio.
-2. **Formatar** — renderizar essas violações como um comentário em markdown,
-   didático e legível.
-
-Tudo é lógica PURA (só processa texto), testável sem rede.
-
-Robustez: apesar de o prompt pedir "apenas JSON", modelos de linguagem às vezes
-embrulham a resposta em cercas de código (```json ... ```) ou acrescentam texto
-em volta. A interpretação tolera esses casos comuns. Quando ainda assim não for
-possível extrair um JSON válido, NÃO inventamos violações: a função de alto nível
-produz um comentário honesto avisando que a análise automática falhou, deixando a
-palavra final para o revisor humano.
-"""
 
 import json
 import re
@@ -29,35 +9,19 @@ class RespostaInvalidaError(Exception):
     """A resposta do modelo não pôde ser interpretada como o JSON esperado."""
 
 
-# Cerca de código markdown, opcionalmente com a linguagem: ```json ... ```
 _CERCA_DE_CODIGO = re.compile(
     r"^```(?:json)?\s*(?P<conteudo>.*?)\s*```$", re.DOTALL
 )
 
-# Padrões usados no saneamento do texto que o modelo devolve. A ordem de
-# aplicação importa: o link markdown é resolvido antes da remoção de URLs, para
-# que "[texto](endereço)" preserve o texto em vez de virar "[texto](...)".
 _TAG_HTML = re.compile(r"<[^>]*>")
 _LINK_MARKDOWN = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _URL_CRUA = re.compile(r"https?://\S+", re.IGNORECASE)
 
-# O comentário é publicado no Pull Request; um texto muito longo prejudica a
-# leitura e não acrescenta informação útil ao autor.
 _LIMITE_DE_TEXTO = 1200
 
 
 def sanear_texto_do_modelo(texto: str) -> str:
-    """Neutraliza o texto devolvido pelo modelo antes de publicá-lo.
 
-    O comentário é renderizado como markdown na página do Pull Request, e o
-    conteúdo desse comentário é produzido por um modelo que leu código de origem
-    não confiável. Sem saneamento, bastaria induzir o modelo a escrever um link
-    ou um bloco HTML para transformar o parecer em vetor de phishing dentro de
-    uma página legítima do repositório.
-
-    O saneamento é aplicado à saída, e não à entrada, porque é na publicação que
-    o texto ganha poder: ali ele deixa de ser dado e passa a ser interface.
-    """
     limpo = _TAG_HTML.sub("", texto)
     limpo = _LINK_MARKDOWN.sub(r"\1", limpo)
     limpo = _URL_CRUA.sub("[link removido]", limpo)
@@ -72,12 +36,7 @@ def sanear_texto_do_modelo(texto: str) -> str:
 
 
 def interpretar_violacoes(resposta_llm: str) -> list[Violacao]:
-    """Extrai as violações do texto devolvido pelo modelo.
 
-    Levanta `RespostaInvalidaError` se não houver um JSON com a estrutura
-    esperada — cabe a quem chama decidir o que fazer (ver
-    `montar_comentario_de_avaliacao`, que trata isso como comentário de erro).
-    """
     dados = _carregar_json(resposta_llm)
 
     violacoes_cruas = dados.get("violacoes")
@@ -105,17 +64,7 @@ def interpretar_violacoes(resposta_llm: str) -> list[Violacao]:
 def descartar_regras_desconhecidas(
     violacoes: list[Violacao], identificadores_validos: frozenset[str]
 ) -> list[Violacao]:
-    """Remove violações que citam regras não enviadas ao modelo.
 
-    O modelo só pode apontar aquilo que lhe foi dado a verificar. Um
-    identificador fora desse conjunto significa que ele inventou a regra ou que
-    foi induzido a citá-la por texto contido no próprio código sob análise.
-
-    A verificação é uma comparação de conjuntos, e não uma avaliação do modelo:
-    nenhum texto escrito no Pull Request consegue contorná-la. É o mesmo
-    princípio do filtro de aplicabilidade — onde é possível decidir de forma
-    determinística, não se pergunta ao modelo.
-    """
     return [
         violacao
         for violacao in violacoes
@@ -124,12 +73,7 @@ def descartar_regras_desconhecidas(
 
 
 def formatar_comentario(violacoes: list[Violacao]) -> str:
-    """Renderiza as violações como o comentário em markdown do PR.
 
-    Lista vazia significa conformidade — um comentário de aprovação. Do
-    contrário, uma seção por violação, citando o identificador da regra para dar
-    rastreabilidade ao feedback.
-    """
     if not violacoes:
         return (
             "## ✅ Revisão arquitetural\n\n"
@@ -142,8 +86,7 @@ def formatar_comentario(violacoes: list[Violacao]) -> str:
     partes = [f"## 🔴 Revisão arquitetural — {quantidade} {plural}\n"]
 
     for violacao in violacoes:
-        # Identificador, elemento e explicação vêm do modelo e são saneados
-        # antes de virarem markdown publicado no Pull Request.
+
         titulo = f"### {sanear_texto_do_modelo(violacao.regra)}"
         elemento = sanear_texto_do_modelo(violacao.elemento)
         if elemento:
@@ -155,14 +98,7 @@ def formatar_comentario(violacoes: list[Violacao]) -> str:
 
 
 def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
-    """Relata um arquivo que não pôde ser interpretado.
 
-    O erro impede apenas a extração do esqueleto lógico, e não a revisão como um
-    todo: um caractere faltando em uma linha não invalida o restante do arquivo.
-    Por isso o aviso acompanha a revisão em vez de substituí-la — deixar de
-    apontar uma violação real por causa de um erro de digitação seria uma troca
-    ruim para uma ferramenta de governança.
-    """
     local = f" na linha {linha}" if linha else ""
     return (
         "## ⚠️ Erro de sintaxe\n\n"
@@ -175,15 +111,7 @@ def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
 def montar_comentario_de_avaliacao(
     resposta_llm: str, identificadores_validos: frozenset[str] | None = None
 ) -> str:
-    """Feature D3 completa: interpreta a resposta do modelo e formata o comentário.
 
-    Em caso de resposta irrecuperável, devolve um comentário honesto de falha —
-    sem inventar violações — para que o revisor humano assuma.
-
-    Quando `identificadores_validos` é informado, apontamentos que citem regras
-    fora desse conjunto são descartados. O parâmetro é opcional para preservar
-    os chamadores que interpretam a resposta sem esse contexto.
-    """
     try:
         violacoes = interpretar_violacoes(resposta_llm)
     except RespostaInvalidaError:
@@ -203,14 +131,7 @@ def montar_comentario_de_avaliacao(
 # --- Extração do JSON -------------------------------------------------------
 
 def _carregar_json(texto: str) -> dict:
-    """Tenta obter um objeto JSON do texto, tolerando embrulhos comuns.
 
-    Estratégia, da mais confiável à mais tolerante:
-    1. o texto todo já é JSON;
-    2. o texto é uma cerca de código markdown (```json ... ```);
-    3. há um objeto `{...}` em algum lugar do texto (pega do primeiro '{' ao
-       último '}').
-    """
     texto = texto.strip()
 
     for candidato in _candidatos_de_json(texto):
@@ -225,7 +146,6 @@ def _carregar_json(texto: str) -> dict:
 
 
 def _candidatos_de_json(texto: str):
-    """Gera, em ordem de preferência, trechos que podem ser o JSON."""
     yield texto
 
     cerca = _CERCA_DE_CODIGO.match(texto)

@@ -1,8 +1,3 @@
-"""Testes do pipeline de revisão (feature E1).
-
-Todo o encadeamento é exercitado com dublês das três portas — sem rede, sem
-banco vetorial, sem modelo de linguagem real.
-"""
 
 import json
 

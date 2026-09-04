@@ -1,4 +1,3 @@
-"""Testes do adaptador de entrada (tradução do webhook do GitHub para o domínio)."""
 
 import hashlib
 import hmac
