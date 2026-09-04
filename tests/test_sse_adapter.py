@@ -1,4 +1,3 @@
-"""Testes do adaptador de transmissão de eventos (sem rede)."""
 
 import queue
 

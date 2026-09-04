@@ -1,14 +1,3 @@
-"""
-Script de setup: indexa o documento SDD no banco vetorial.
-
-Executado manualmente sempre que o SDD mudar. É uma operação de ciclo de vida
-do adaptador — o núcleo nunca indexa nada, apenas consulta.
-
-Uso:
-    venv/Scripts/python.exe scripts/indexar_sdd.py [diretorio_do_sdd]
-
-Padrão: sdd/
-"""
 
 import os
 import sys
@@ -40,7 +29,6 @@ def principal() -> None:
         adaptador.indexar_regras(regras)
         print("Indexacao concluida.")
     finally:
-        # Sempre libera o lock do banco embarcado, mesmo se algo falhar.
         adaptador.fechar()
 
 

@@ -1,12 +1,4 @@
-"""
-Testes do QdrantAdapter (busca semântica sobre as regras do SDD).
 
-Marcados como `integracao`: carregam o modelo de embeddings e criam um banco
-vetorial em disco temporário. São mais lentos que os testes puros.
-
-Rodar apenas os rápidos:   pytest -m "not integracao"
-Rodar apenas estes:        pytest -m integracao
-"""
 
 import pytest
 

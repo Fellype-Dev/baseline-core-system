@@ -1,30 +1,3 @@
-# Conjunto de VALIDAÇÃO — casos novos, reservados.
-#
-# Por que este arquivo existe, separado de `casos.yml`:
-#
-# O corpus de desenvolvimento (`casos.yml`) foi usado para DIAGNOSTICAR o
-# comportamento da ferramenta e para ESCOLHER entre estratégias de indexação.
-# Um número medido no mesmo conjunto que guiou as decisões é resultado em
-# amostra: ele descreve o quanto a configuração se ajustou àquele corpus, não o
-# quanto a ferramenta generaliza. Reportá-lo como desempenho seria enganoso.
-#
-# Estes casos foram escritos DEPOIS que a configuração final foi fixada, e o
-# gabarito foi definido ANTES da primeira execução — nenhum caso foi ajustado
-# em função do resultado obtido. É este conjunto que sustenta a afirmação de
-# desempenho no capítulo de Resultados.
-#
-# São situações deliberadamente diferentes das de desenvolvimento, para exigir
-# generalização e não memorização:
-#   - ARQ-001 violada por importar biblioteca de rede (e não um adaptador);
-#   - ARQ-003 cobrada em `app/api/**` (o corpus de desenvolvimento só exercitou
-#     `app/adapters/**`);
-#   - QUA-001 violada por engolir a exceção retornando um valor (e não por
-#     `pass`);
-#   - SEG-001 violada por senha dentro de string de conexão (e não por chave de
-#     API isolada).
-#
-# Mesma proporção do corpus de desenvolvimento: 7 casos com violação e 5 em
-# conformidade.
 
 casos:
   # ------------------------------------------------------------------

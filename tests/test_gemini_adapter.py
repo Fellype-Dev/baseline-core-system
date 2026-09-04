@@ -1,10 +1,4 @@
-"""Testes do GeminiAdapter.
 
-O teste de contrato e o de tradução rodam SEM rede (a construção do adaptador não
-chama a API, e a chamada ao modelo é substituída por um dublê). Um teste real,
-que gasta uma chamada de API, fica marcado como `integracao` e só roda sob
-demanda.
-"""
 
 import pytest
 

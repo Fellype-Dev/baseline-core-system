@@ -1,4 +1,3 @@
-"""Testes da interpretação e formatação do resultado da avaliação (feature D3)."""
 
 import pytest
 

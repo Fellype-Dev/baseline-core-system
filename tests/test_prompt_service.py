@@ -1,8 +1,3 @@
-"""Testes da montagem do prompt de avaliação (feature D1).
-
-Como a função é lógica pura, todos os testes rodam sem rede: montam objetos de
-domínio de exemplo e inspecionam o texto resultante.
-"""
 
 import json
 
