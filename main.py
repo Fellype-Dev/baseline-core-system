@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 import config
 from app.adapters.github_adapter import GitHubAdapter
+from app.adapters.github_app import FabricaDeGitHub
 from app.adapters.local_llm_adapter import LocalLLMAdapter
 from app.adapters.qdrant_adapter import QdrantAdapter
 from app.adapters.sse_adapter import ObservadorSSE
@@ -19,15 +20,46 @@ logging.basicConfig(level=logging.INFO)
 
 config.validar_configuracao()
 
-repositorio = GitHubAdapter(token=config.GITHUB_TOKEN)
 conhecimento = QdrantAdapter()
 
 llm = LocalLLMAdapter(modelo=config.LLM_LOCAL_MODELO, url=config.LLM_LOCAL_URL)
 
 observador = ObservadorSSE()
 
+# A autenticação no GitHub tem duas formas, e a configuração decide qual vale.
+# Com App, a credencial depende da instalação que disparou o evento, e o
+# adaptador é criado por requisição. Com token pessoal, um único adaptador serve
+# a tudo — caminho mantido para desenvolvimento, já que um token só alcança os
+# repositórios do próprio dono.
+fabrica_de_github = (
+    FabricaDeGitHub(config.GITHUB_APP_ID, config.chave_privada_do_app())
+    if config.app_configurado()
+    else None
+)
+repositorio_por_token = (
+    GitHubAdapter(token=config.GITHUB_TOKEN) if config.GITHUB_TOKEN else None
+)
 
-def ao_receber_pull_request(pr: PullRequest) -> None:
+
+def _repositorio_para(instalacao: int | None):
+    """Escolhe com quais credenciais responder a esta entrega.
+
+    Note que a decisão acontece aqui, no composition root, e não no núcleo: o
+    pipeline recebe uma `RepositorioPort` e não faz ideia de como ela foi
+    autenticada. Foi por isso que passar de "um adaptador para tudo" para "um
+    adaptador por instalação" não exigiu alteração alguma na regra de negócio.
+    """
+    if fabrica_de_github is not None and instalacao is not None:
+        return fabrica_de_github.para_instalacao(instalacao)
+    if repositorio_por_token is not None:
+        return repositorio_por_token
+    raise RuntimeError(
+        "Entrega sem instalação e sem token pessoal configurado: não há como "
+        "autenticar no GitHub."
+    )
+
+
+def ao_receber_pull_request(pr: PullRequest, instalacao: int | None = None) -> None:
 
     print(f"Processando PR #{pr.numero} em {pr.repositorio}...")
     observador.registrar(
@@ -37,6 +69,7 @@ def ao_receber_pull_request(pr: PullRequest) -> None:
         )
     )
     try:
+        repositorio = _repositorio_para(instalacao)
         revisar_pull_request(pr, repositorio, conhecimento, llm, observador)
         print("  Revisão publicada no PR.")
     except Exception:

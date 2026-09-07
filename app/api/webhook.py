@@ -13,7 +13,10 @@ _log = logging.getLogger(__name__)
 
 _CABECALHO_DE_ASSINATURA = "X-Hub-Signature-256"
 
-AoReceberPullRequest = Callable[[PullRequest], None]
+# Ação executada quando um Pull Request chega: recebe o PR e o identificador da
+# instalação do App que originou a entrega (nulo quando a autenticação é por
+# token pessoal). Quem fornece a ação concreta é o composition root.
+AoReceberPullRequest = Callable[[PullRequest, int | None], None]
 
 
 def assinatura_confere(corpo: bytes, assinatura: str | None, segredo: str) -> bool:
@@ -61,7 +64,14 @@ def criar_router_webhook(
                 numero=payload["pull_request"]["number"],
             )
 
-            tarefas.add_task(ao_receber_pr, pr)
+            # Entregas de um GitHub App identificam a instalação que as originou,
+            # e é ela que determina com quais credenciais responder. O conceito é
+            # do GitHub, então fica aqui, no adaptador de entrada, sem alcançar o
+            # vocabulário do domínio. Entregas por token pessoal não trazem o
+            # campo, e nesse caso o valor é nulo.
+            instalacao = (payload.get("installation") or {}).get("id")
+
+            tarefas.add_task(ao_receber_pr, pr, instalacao)
 
         return {"status": "recebido"}
 

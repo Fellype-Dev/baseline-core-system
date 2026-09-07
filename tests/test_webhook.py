@@ -11,10 +11,16 @@ from app.core.models import PullRequest
 
 
 def _cliente_com_captura():
-    """Monta um app de teste cuja ação apenas registra os PRs recebidos."""
-    recebidos: list[PullRequest] = []
+    """Monta um app de teste cuja ação apenas registra o que foi recebido.
+
+    Guarda pares (PullRequest, instalação) — a instalação é nula quando a
+    entrega não vem de um GitHub App.
+    """
+    recebidos: list[tuple[PullRequest, int | None]] = []
     app = FastAPI()
-    app.include_router(criar_router_webhook(recebidos.append))
+    app.include_router(
+        criar_router_webhook(lambda pr, instalacao: recebidos.append((pr, instalacao)))
+    )
     return TestClient(app), recebidos
 
 
@@ -31,7 +37,24 @@ def test_pr_aberto_e_traduzido_para_o_dominio():
     )
 
     assert resposta.status_code == 200
-    assert recebidos == [PullRequest("dono/repo", 42)]
+    assert recebidos == [(PullRequest("dono/repo", 42), None)]
+
+
+def test_instalacao_do_app_e_repassada():
+    """Entregas de um GitHub App dizem com quais credenciais responder."""
+    cliente, recebidos = _cliente_com_captura()
+
+    cliente.post(
+        "/webhook",
+        json={
+            "action": "opened",
+            "repository": {"full_name": "outra/org"},
+            "pull_request": {"number": 3},
+            "installation": {"id": 987654},
+        },
+    )
+
+    assert recebidos == [(PullRequest("outra/org", 3), 987654)]
 
 
 def test_evento_que_nao_e_abertura_e_ignorado():
@@ -54,9 +77,13 @@ PAYLOAD = {
 
 
 def _cliente_protegido():
-    recebidos: list[PullRequest] = []
+    recebidos: list[tuple[PullRequest, int | None]] = []
     app = FastAPI()
-    app.include_router(criar_router_webhook(recebidos.append, SEGREDO))
+    app.include_router(
+        criar_router_webhook(
+            lambda pr, instalacao: recebidos.append((pr, instalacao)), SEGREDO
+        )
+    )
     return TestClient(app), recebidos
 
 
@@ -80,7 +107,7 @@ def test_entrega_assinada_corretamente_e_aceita():
     )
 
     assert resposta.status_code == 200
-    assert recebidos == [PullRequest("dono/repo", 7)]
+    assert recebidos == [(PullRequest("dono/repo", 7), None)]
 
 
 def test_entrega_sem_assinatura_e_recusada():
@@ -137,4 +164,4 @@ def test_sem_segredo_configurado_a_verificacao_fica_desligada():
     resposta = cliente.post("/webhook", json=PAYLOAD)
 
     assert resposta.status_code == 200
-    assert recebidos == [PullRequest("dono/repo", 7)]
+    assert recebidos == [(PullRequest("dono/repo", 7), None)]
