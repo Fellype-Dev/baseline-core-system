@@ -264,6 +264,13 @@ não apenas revisá-la.
 - **Sobre-apontamento.** O erro residual do modelo é por excesso: ele aponta
   regras recuperadas que não foram violadas. Reduzido de 11 para 1 alarme em 30
   avaliações de código conforme, mas não eliminado.
+- **Recorte por arquivo.** Cada arquivo é avaliado isoladamente, então nenhuma
+  questão cujo esclarecimento esteja em outro arquivo é decidível. Um adaptador
+  que recebe uma credencial por parâmetro parece guardá-la no código, porque a
+  leitura de `os.getenv` está no módulo de configuração; um adaptador que cumpre
+  um invariante declarado na porta parece inventá-lo, porque `ports.py` não
+  chega ao prompt. Resolver isso exigiria montar o grafo de dependências entre
+  os arquivos alterados.
 - **A revisão vale o que vale o SDD.** Uma regra ampla, vaga ou fora do domínio
   arquitetural degrada toda a revisão, e não só os apontamentos sobre ela: a
   recuperação devolve um número fixo de regras por arquivo, então uma regra que
