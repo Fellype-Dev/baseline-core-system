@@ -82,9 +82,16 @@ class EventoDeProgresso:
 class Violacao:
 
 
-    regra: str        
-    explicacao: str  
-    elemento: str = ""  
+    regra: str
+    explicacao: str
+    elemento: str = ""
+
+    # A linha que sustenta o apontamento. O modelo informa apenas o NÚMERO; o
+    # texto é buscado no código pelo próprio sistema. Assim o trecho exibido
+    # vem do repositório, e não da saída do modelo — e um número não quebra o
+    # JSON da resposta, como quebrava a linha de código copiada literalmente.
+    linha: int = 0
+    evidencia: str = ""
 
 
 @dataclass(frozen=True)

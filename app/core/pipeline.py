@@ -31,6 +31,23 @@ from app.services.sdd_service import ErroDeSDD, interpretar_sdd
 _log = logging.getLogger(__name__)
 
 
+# O que o produto considera motivo para revisar. Mora no núcleo porque é decisão
+# de produto: mudar de ideia sobre quando revisar não pode exigir alterar quem
+# fala o protocolo do GitHub. Um Pull Request fechado chega até aqui e é
+# recusado nesta linha, e não numa condição escondida no adaptador de entrada.
+EVENTOS_QUE_PEDEM_REVISAO = frozenset({"aberto", "reaberto", "atualizado"})
+
+
+def merece_revisao(evento: str) -> bool:
+    """Diz se o que aconteceu com o Pull Request pede uma revisão nova.
+
+    Revisar de novo a cada push é o que fecha o ciclo: sem isso a ferramenta
+    aponta uma vez, na abertura, e nunca verifica a correção que ela mesma
+    provocou.
+    """
+    return evento in EVENTOS_QUE_PEDEM_REVISAO
+
+
 _MODELO_INDISPONIVEL = (
     "## ⚠️ Revisão arquitetural indisponível para este arquivo\n\n"
     "O modelo de linguagem não pôde ser consultado desta vez. Um revisor "
@@ -256,8 +273,13 @@ def _revisar_arquivo(
         return _combinar(aviso, _MODELO_INDISPONIVEL)
 
 
+    # A conferência da linha só faz sentido quando o modelo recebeu a listagem
+    # numerada. Sem elementos isolados não há numeração no prompt, e cobrar um
+    # número que não foi oferecido descartaria apontamentos legítimos.
     comentario = montar_comentario_de_avaliacao(
-        resposta, frozenset(regra.identificador for regra in regras)
+        resposta,
+        frozenset(regra.identificador for regra in regras),
+        codigo_revisado=arquivo.conteudo if elementos else None,
     )
     _anunciar(
         observador, "avaliado", f"`{arquivo.caminho}`: avaliação concluída."

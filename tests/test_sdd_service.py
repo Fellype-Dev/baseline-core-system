@@ -145,9 +145,9 @@ def test_sdd_do_projeto_e_valido():
         "ARQ-001",
         "ARQ-002",
         "ARQ-003",
+        "ARQ-004",
         "SEG-001",
         "QUA-001",
-        "DOC-001",
     }
     # Toda regra precisa ter enunciado e motivação preenchidos.
     assert all(r.regra and r.motivacao for r in regras)

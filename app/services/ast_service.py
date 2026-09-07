@@ -27,7 +27,7 @@ class _ColetorDeElementos(ast.NodeVisitor):
                 tipo="classe",
                 nome=node.name,
                 assinatura=f"class {node.name}",
-                linha_inicio=node.lineno,
+                linha_inicio=_primeira_linha(node),
                 linha_fim=node.end_lineno or node.lineno,
             )
         )
@@ -54,10 +54,25 @@ class _ColetorDeElementos(ast.NodeVisitor):
                 tipo=tipo,
                 nome=nome,
                 assinatura=assinatura,
-                linha_inicio=node.lineno,
+                linha_inicio=_primeira_linha(node),
                 linha_fim=node.end_lineno or node.lineno,
             )
         )
+
+
+def _primeira_linha(node) -> int:
+    """Onde o elemento realmente começa, contando os decoradores.
+
+    A AST aponta `lineno` para a palavra `def`/`class`, deixando os decoradores
+    de fora. Mas o decorador faz parte do elemento e costuma ser justamente o
+    que interessa a uma revisão arquitetural — `@router.post` diz que a função
+    é um ponto de entrada HTTP. Sem ele, o elemento chega incompleto a quem
+    julga.
+    """
+    decoradores = getattr(node, "decorator_list", [])
+    if not decoradores:
+        return node.lineno
+    return min(node.lineno, *(d.lineno for d in decoradores))
 
 
 def extrair_esqueleto(codigo: str) -> list[ElementoDeCodigo]:

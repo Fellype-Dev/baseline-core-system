@@ -85,15 +85,22 @@ casos:
           except Exception:
               return None
 
-  - nome: ano_em_constante_de_versao
-    caminho: app/relatorios/versao.py
-    esperado: [DOC-001]
+  - nome: nucleo_le_configuracao_do_disco
+    caminho: app/core/politica.py
+    esperado: [ARQ-004]
     codigo: |
-      NOME_DA_VERSAO = "Plataforma de Revisao - Edicao 2024"
+      import json
+      from pathlib import Path
+
+      from app.core.ports import ConhecimentoPort
 
 
-      def rodape() -> str:
-          return f"{NOME_DA_VERSAO} | todos os direitos reservados"
+      def regras_ativas(conhecimento: ConhecimentoPort) -> list:
+          # O nucleo buscando a propria configuracao, em vez de recebe-la pronta.
+          politica = json.loads(Path("config/politica.json").read_text())
+          if politica["modo"] == "estrito":
+              return conhecimento.buscar_regras_relevantes(politica["consulta_estrita"])
+          return conhecimento.buscar_regras_relevantes(politica["consulta_padrao"])
 
   - nome: adaptador_com_segredo_e_logica
     caminho: app/adapters/pagamento_adapter.py

@@ -70,6 +70,29 @@ def test_esqueleto_recusa_codigo_invalido():
         extrair_esqueleto("def quebrado(:")
 
 
+CODIGO_DECORADO = (
+    "from fastapi import APIRouter\n"          # 1
+    "\n"                                       # 2
+    "router = APIRouter()\n"                   # 3
+    "\n"                                       # 4
+    "\n"                                       # 5
+    '@router.post("/eventos")\n'               # 6
+    "async def receber(payload: dict) -> dict:\n"  # 7
+    "    return {'status': 'aceito'}\n"        # 8
+)
+
+
+def test_elemento_comeca_no_decorador_e_nao_no_def():
+    """O decorador diz o que a função é; sem ele, o elemento chega incompleto."""
+    por_nome = {e.nome: e for e in extrair_esqueleto(CODIGO_DECORADO)}
+    assert por_nome["receber"].linha_inicio == 6
+
+
+def test_alteracao_no_decorador_aponta_para_a_funcao():
+    nomes = {e.nome for e in elementos_alterados(CODIGO_DECORADO, {6})}
+    assert nomes == {"receber"}
+
+
 def test_elementos_alterados_isola_apenas_o_que_mudou():
     # A linha 9 (dentro de calcular) foi alterada.
     nomes = {e.nome for e in elementos_alterados(CODIGO, {9})}

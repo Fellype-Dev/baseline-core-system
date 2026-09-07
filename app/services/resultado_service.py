@@ -1,6 +1,7 @@
 
 import json
 import re
+from dataclasses import replace
 
 from app.core.models import Violacao
 
@@ -56,9 +57,18 @@ def interpretar_violacoes(resposta_llm: str) -> list[Violacao]:
                 regra=str(item.get("regra", "")),
                 explicacao=str(item.get("explicacao", "")),
                 elemento=str(item.get("elemento", "")),
+                linha=_como_inteiro(item.get("linha")),
             )
         )
     return violacoes
+
+
+def _como_inteiro(valor) -> int:
+    """O modelo às vezes devolve o número como texto; zero significa 'nenhuma'."""
+    try:
+        return int(str(valor).strip())
+    except (TypeError, ValueError):
+        return 0
 
 
 def descartar_regras_desconhecidas(
@@ -70,6 +80,55 @@ def descartar_regras_desconhecidas(
         for violacao in violacoes
         if violacao.regra.strip() in identificadores_validos
     ]
+
+
+# --- Conferência da linha apontada ------------------------------------------
+#
+# O sistema já não confia no modelo para dizer QUAL regra foi violada: o
+# identificador é conferido contra as regras recuperadas. Aqui a desconfiança
+# se estende a ONDE. O modelo aponta um número de linha; o sistema busca essa
+# linha no código e é ela que vai ao comentário.
+#
+# Pedir o número em vez do trecho resolve duas coisas de uma vez. O texto
+# exibido deixa de ser saída do modelo e passa a vir do repositório, o que
+# fecha uma via de injeção em vez de saneá-la. E um inteiro atravessa o JSON
+# sem quebrá-lo: quando se pedia o trecho copiado, uma linha contendo aspas
+# duplas fazia o modelo delimitar o valor com aspas simples, e a resposta
+# inteira era rejeitada — apagando o apontamento de segredo em texto claro,
+# justamente o que menos se pode perder.
+#
+# O que a conferência NÃO alcança: erro de julgamento sobre código presente.
+# Se a linha existe, o apontamento passa mesmo que a conclusão esteja errada.
+
+
+def anexar_evidencia(
+    violacoes: list[Violacao], codigo_revisado: str
+) -> list[Violacao]:
+    """Troca o número apontado pelo texto real da linha, ou descarta."""
+
+    linhas = codigo_revisado.splitlines()
+    if not linhas:
+        return violacoes
+
+    com_evidencia = []
+    for violacao in violacoes:
+        texto = _linha_do_codigo(linhas, violacao.linha)
+        if texto is None:
+            continue
+        com_evidencia.append(replace(violacao, evidencia=texto))
+    return com_evidencia
+
+
+def _linha_do_codigo(linhas: list[str], numero: int) -> str | None:
+    """O texto da linha apontada, se ela existe e diz alguma coisa."""
+
+    if numero < 1 or numero > len(linhas):
+        return None
+
+    texto = linhas[numero - 1].strip()
+    # Linha em branco não sustenta apontamento nenhum: apontá-la é o mesmo que
+    # não apontar, e o prompt foi explícito quanto a isso.
+    return texto or None
 
 
 def formatar_comentario(violacoes: list[Violacao]) -> str:
@@ -92,9 +151,29 @@ def formatar_comentario(violacoes: list[Violacao]) -> str:
         if elemento:
             titulo += f" — em `{elemento}`"
         partes.append(titulo)
+
+        # A linha apontada vai junto do apontamento: o autor confere em um
+        # relance se a ferramenta está olhando para o lugar certo.
+        trecho = _formatar_evidencia(violacao)
+        if trecho:
+            partes.append(trecho)
+
         partes.append(sanear_texto_do_modelo(violacao.explicacao))
 
     return "\n\n".join(partes)
+
+
+def _formatar_evidencia(violacao: Violacao) -> str:
+    """Bloco indentado — sem cercas, que o saneamento neutralizaria.
+
+    O texto aqui veio do repositório, não do modelo, então não passa pelo
+    saneamento: recortá-lo descaracterizaria o próprio código que se quer
+    mostrar. O bloco indentado já impede que ele seja interpretado como
+    marcação no comentário.
+    """
+    if not violacao.evidencia:
+        return ""
+    return f"    {violacao.linha} | {violacao.evidencia}"
 
 
 def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
@@ -109,7 +188,9 @@ def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
 
 
 def montar_comentario_de_avaliacao(
-    resposta_llm: str, identificadores_validos: frozenset[str] | None = None
+    resposta_llm: str,
+    identificadores_validos: frozenset[str] | None = None,
+    codigo_revisado: str | None = None,
 ) -> str:
 
     try:
@@ -124,6 +205,9 @@ def montar_comentario_de_avaliacao(
 
     if identificadores_validos is not None:
         violacoes = descartar_regras_desconhecidas(violacoes, identificadores_validos)
+
+    if codigo_revisado is not None:
+        violacoes = anexar_evidencia(violacoes, codigo_revisado)
 
     return formatar_comentario(violacoes)
 

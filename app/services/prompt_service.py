@@ -16,7 +16,11 @@ _log = logging.getLogger(__name__)
 _LIMITE_DO_DIFF = 12000
 _LIMITE_DO_CAMINHO = 300
 
-_TAMANHO_DE_ALERTA = 24000
+# Orçamento para a forma completa dos elementos alterados. Somado ao diff, o
+# prompt cabe com folga no contexto do modelo local.
+_LIMITE_DOS_CORPOS = 12000
+
+_TAMANHO_DE_ALERTA = 32000
 
 _LIMITE_DE_DIRETORIOS = 200
 
@@ -27,6 +31,7 @@ def montar_prompt(
     regras: list[RegraArquitetural],
     *,
     incluir_exemplos: bool = False,
+    incluir_corpo: bool = True,
 ) -> str:
 
     marca = secrets.token_hex(8)
@@ -35,8 +40,15 @@ def montar_prompt(
         _INSTRUCAO_DE_PAPEL,
         _INSTRUCAO_DE_CONFIANCA,
         _formatar_regras(regras, marca, incluir_exemplos=incluir_exemplos),
-        _formatar_codigo(arquivo, elementos_alterados, marca),
-        _instrucao_de_saida(),
+        _formatar_codigo(
+            arquivo, elementos_alterados, marca, incluir_corpo=incluir_corpo
+        ),
+        # Só se cobra o número da linha quando a listagem numerada foi enviada.
+        _instrucao_de_saida(
+            pedir_linha=incluir_corpo
+            and bool(elementos_alterados)
+            and bool(arquivo.conteudo)
+        ),
     ]
 
     prompt = "\n\n".join(secoes)
@@ -151,7 +163,9 @@ def montar_prompt_de_estrutura(
         _formatar_regras(regras, marca, incluir_exemplos=False),
         "\n".join(contexto),
         "\n".join(avaliacao),
-        _instrucao_de_saida(),
+        # A revisão estrutural avalia diretórios, não linhas: não há número a
+        # apontar, e pedi-lo só confundiria.
+        _instrucao_de_saida(pedir_linha=False),
     ]
     return "\n\n".join(secoes)
 
@@ -164,7 +178,11 @@ def _truncar(texto: str, limite: int, rotulo: str) -> str:
 
 
 def _formatar_codigo(
-    arquivo: ArquivoAlterado, elementos: list[ElementoDeCodigo], marca: str
+    arquivo: ArquivoAlterado,
+    elementos: list[ElementoDeCodigo],
+    marca: str,
+    *,
+    incluir_corpo: bool = True,
 ) -> str:
 
     caminho = _truncar(arquivo.caminho, _LIMITE_DO_CAMINHO, "caminho")
@@ -184,27 +202,166 @@ def _formatar_codigo(
 
     linhas.append("\nAlterações (diff no formato do git):")
     linhas.append(_truncar(arquivo.diff, _LIMITE_DO_DIFF, "diff"))
+
+    if incluir_corpo:
+        corpos = _formatar_corpos(arquivo, elementos)
+        if corpos:
+            linhas.append(corpos)
+
     linhas.append(f'</codigo_sob_analise marca="{marca}">')
     return "\n".join(linhas)
 
 
-def _instrucao_de_saida() -> str:
+# --- Forma completa dos elementos alterados ---------------------------------
+#
+# O diff é um recorte SINTÁTICO: o servidor fixa três linhas de contexto, sem
+# olhar para o que o código significa. Esse corte cai onde calhar, e pode
+# terminar no cabeçalho de um bloco — um `except Exception:` cujo corpo ficou
+# de fora. Quem julga vê um bloco aparentemente vazio e conclui o que não é.
+#
+# O recorte da AST é SEMÂNTICO: pega a unidade inteira que contém a alteração.
+# O diff continua dizendo O QUE mudou; o corpo diz o que aquilo É.
 
-    formato = {
-        "violacoes": [
-            {
-                "regra": "ID-DA-REGRA",
-                "elemento": "nome do elemento afetado (ou vazio)",
-                "explicacao": "explicação didática da violação",
-            }
-        ]
+_AVISO_DOS_CORPOS = (
+    "\nForma completa dos elementos alterados, com as linhas numeradas como no "
+    "arquivo. O diff acima marca apenas as linhas modificadas e pode terminar "
+    "no meio de um bloco; a listagem abaixo mostra cada elemento por inteiro, "
+    "para que a avaliação não dependa de um trecho cortado. Use estes números "
+    "ao apontar uma violação. Avalie somente o que o diff aponta como "
+    "alterado — problemas preexistentes fora dessas linhas não devem ser "
+    "relatados."
+)
+
+
+def _formatar_corpos(
+    arquivo: ArquivoAlterado, elementos: list[ElementoDeCodigo]
+) -> str:
+
+    if not elementos or not arquivo.conteudo:
+        return ""
+
+    linhas_do_arquivo = arquivo.conteudo.splitlines()
+    partes: list[str] = []
+    gasto = 0
+
+    for elemento in _elementos_mais_internos(elementos):
+        corpo = _corpo_do_elemento(linhas_do_arquivo, elemento)
+        if corpo is None:
+            continue
+
+        if gasto + len(corpo) > _LIMITE_DOS_CORPOS:
+            partes.append(
+                f"[demais elementos omitidos: o conjunto excede "
+                f"{_LIMITE_DOS_CORPOS} caracteres]"
+            )
+            break
+
+        gasto += len(corpo)
+        partes.append(
+            f"--- {elemento.tipo} `{elemento.nome}`\n"
+            + _numerar(corpo, elemento.linha_inicio)
+        )
+
+    if not partes:
+        return ""
+    return "\n".join([_AVISO_DOS_CORPOS, *partes])
+
+
+def _numerar(corpo: str, primeira_linha: int) -> str:
+    """Prefixa cada linha com o seu número no arquivo.
+
+    O apontamento do modelo é feito por número de linha, e contar linhas é
+    trabalho que ele faz mal. Com a listagem numerada ele não conta: lê. E o
+    número, diferente do trecho copiado, atravessa o JSON sem quebrá-lo — foi
+    a linha de código com aspas dentro que invalidava a resposta inteira.
+    """
+    return "\n".join(
+        f"{numero:4} | {linha}"
+        for numero, linha in enumerate(corpo.splitlines(), start=primeira_linha)
+    )
+
+
+def _elementos_mais_internos(
+    elementos: list[ElementoDeCodigo],
+) -> list[ElementoDeCodigo]:
+    """Fica só com a menor unidade completa que contém cada alteração.
+
+    Uma mudança dentro de um método devolve o método E a classe inteira que o
+    envolve. Enviar a classe custaria muito e diria menos: o método já é
+    completo, e é sobre ele que a regra será aplicada.
+    """
+    return [
+        elemento
+        for elemento in elementos
+        if not any(_contem(elemento, outro) for outro in elementos)
+    ]
+
+
+def _contem(externo: ElementoDeCodigo, interno: ElementoDeCodigo) -> bool:
+
+    if externo is interno:
+        return False
+    # Intervalos idênticos não se contêm: fossem tratados como contenção, um
+    # eliminaria o outro e nenhum dos dois sobraria.
+    if (externo.linha_inicio, externo.linha_fim) == (
+        interno.linha_inicio,
+        interno.linha_fim,
+    ):
+        return False
+    return (
+        externo.linha_inicio <= interno.linha_inicio
+        and interno.linha_fim <= externo.linha_fim
+    )
+
+
+def _corpo_do_elemento(
+    linhas_do_arquivo: list[str], elemento: ElementoDeCodigo
+) -> str | None:
+    """Recorta o elemento do arquivo, ou devolve None se o intervalo não bater.
+
+    Os números vêm da AST do mesmo conteúdo, então devem bater sempre. A
+    checagem existe porque um intervalo inválido produziria um trecho
+    silenciosamente errado — pior que trecho nenhum.
+    """
+    inicio = elemento.linha_inicio - 1
+    fim = elemento.linha_fim
+
+    if inicio < 0 or inicio >= fim or fim > len(linhas_do_arquivo):
+        return None
+    return "\n".join(linhas_do_arquivo[inicio:fim])
+
+
+def _instrucao_de_saida(*, pedir_linha: bool = True) -> str:
+
+    violacao = {
+        "regra": "ID-DA-REGRA",
+        "elemento": "nome do elemento afetado (ou vazio)",
     }
-    exemplo = json.dumps(formato, ensure_ascii=False, indent=2)
+    if pedir_linha:
+        violacao["linha"] = 0
+    violacao["explicacao"] = "explicação didática da violação"
+
+    exemplo = json.dumps({"violacoes": [violacao]}, ensure_ascii=False, indent=2)
     return (
         "## Formato da resposta\n"
         "Responda APENAS com um objeto JSON válido, sem texto antes ou depois, "
         "seguindo exatamente esta estrutura:\n"
         f"{exemplo}\n"
-        "Se o código estiver em conformidade com todas as regras, retorne a "
+        + (f"{_INSTRUCAO_DE_EVIDENCIA}\n" if pedir_linha else "")
+        + "Se o código estiver em conformidade com todas as regras, retorne a "
         'lista vazia: {"violacoes": []}.'
     )
+
+
+# Um apontamento que não consegue apontar para uma linha é opinião, não achado.
+# Exigir a citação serve a duas coisas ao mesmo tempo: dá ao sistema algo
+# conferível contra o código, e obriga o modelo a procurar a linha antes de
+# afirmar que ela existe.
+_INSTRUCAO_DE_EVIDENCIA = (
+    "O campo `linha` deve conter o NÚMERO da linha que viola a regra, como "
+    "aparece na listagem numerada do código acima. Um número inteiro, nada "
+    "além disso. Todo apontamento que não indicar uma linha válida é "
+    "descartado automaticamente, sem chegar ao autor. Se você não consegue "
+    "apontar uma linha concreta que viole a regra, então não há violação a "
+    "relatar."
+)

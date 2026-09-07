@@ -21,6 +21,10 @@ from app.core.ports import RepositorioPort
 
 DIRETORIO_SDD = "sdd"
 
+# Comentário HTML: o GitHub não o exibe no markdown renderizado, mas ele fica no
+# corpo e permite reencontrar a revisão publicada antes.
+_MARCA_DA_REVISAO = "<!-- revisao-arquitetural -->"
+
 
 def _diretorios_de(caminho: str) -> set[str]:
 
@@ -134,6 +138,31 @@ class GitHubAdapter(RepositorioPort):
             return None
 
     def publicar_comentario(self, pr: PullRequest, texto: str) -> None:
+        """Publica a revisão, substituindo a anterior quando já houver uma.
+
+        Como o Pull Request é revisado de novo a cada push, publicar sempre um
+        comentário novo empilharia revisões repetidas e afogaria a discussão do
+        PR. Uma revisão só, sempre atual, é também mais fiel ao que ela é: um
+        retrato do estado atual do código, não um histórico.
+
+        A marca invisível no início do corpo é o que identifica o comentário da
+        ferramenta entre os demais. O autor não serve para isso: ele muda
+        conforme a autenticação seja por App ou por token pessoal.
+        """
+        corpo = f"{_MARCA_DA_REVISAO}\n{texto}"
         repositorio = self._cliente.get_repo(pr.repositorio)
         pull_request = repositorio.get_pull(pr.numero)
-        pull_request.create_issue_comment(texto)
+
+        anterior = self._revisao_anterior(pull_request)
+        if anterior is not None:
+            anterior.edit(corpo)
+            return
+        pull_request.create_issue_comment(corpo)
+
+    @staticmethod
+    def _revisao_anterior(pull_request):
+
+        for comentario in pull_request.get_issue_comments():
+            if (comentario.body or "").startswith(_MARCA_DA_REVISAO):
+                return comentario
+        return None
