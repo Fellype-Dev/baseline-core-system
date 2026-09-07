@@ -137,17 +137,15 @@ class GitHubAdapter(RepositorioPort):
         except GithubException:
             return None
 
-    def publicar_comentario(self, pr: PullRequest, texto: str) -> None:
-        """Publica a revisão, substituindo a anterior quando já houver uma.
+    def publicar_revisao(self, pr: PullRequest, texto: str) -> None:
+        """Realiza no GitHub o "no máximo uma revisão" que a porta exige.
 
-        Como o Pull Request é revisado de novo a cada push, publicar sempre um
-        comentário novo empilharia revisões repetidas e afogaria a discussão do
-        PR. Uma revisão só, sempre atual, é também mais fiel ao que ela é: um
-        retrato do estado atual do código, não um histórico.
-
-        A marca invisível no início do corpo é o que identifica o comentário da
-        ferramenta entre os demais. O autor não serve para isso: ele muda
-        conforme a autenticação seja por App ou por token pessoal.
+        A plataforma não tem o conceito de revisão substituível, então ele é
+        construído aqui: um comentário de issue que é reescrito a cada
+        publicação. A marca invisível no início do corpo é o que permite
+        reencontrá-lo entre os demais comentários do Pull Request. O autor não
+        serviria para isso — ele muda conforme a autenticação seja por App ou
+        por token pessoal.
         """
         corpo = f"{_MARCA_DA_REVISAO}\n{texto}"
         repositorio = self._cliente.get_repo(pr.repositorio)

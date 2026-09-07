@@ -43,7 +43,10 @@ GEMINI_MODEL = "gemini-2.5-flash"
 # caráter do erro: zero alarmes falsos em 30 avaliações de código conforme,
 # contra 1, ao custo de deixar passar um pouco mais. Para uma ferramenta que
 # comenta em Pull Request alheio, acusar à toa custa mais caro do que calar.
-LLM_LOCAL_MODELO = os.getenv("LLM_LOCAL_MODELO", "gpt-oss:20b")
+# `marvin` é o gpt-oss:20b com a janela de contexto ampliada — veja o Modelfile
+# na raiz do projeto e o porquê documentado nele. Apontar direto para
+# `gpt-oss:20b` funciona, mas trunca prompts de arquivos grandes em silêncio.
+LLM_LOCAL_MODELO = os.getenv("LLM_LOCAL_MODELO", "marvin")
 LLM_LOCAL_URL = os.getenv(
     "LLM_LOCAL_URL", "http://localhost:11434/v1/chat/completions"
 )

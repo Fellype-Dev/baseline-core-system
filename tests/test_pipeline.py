@@ -59,7 +59,7 @@ class RepositorioFalso:
     def obter_arquivos_alterados(self, pr):
         return self._arquivos
 
-    def publicar_comentario(self, pr, texto):
+    def publicar_revisao(self, pr, texto):
         self.comentario_publicado = texto
 
     def obter_documento_sdd(self, pr):
@@ -541,9 +541,11 @@ def test_falha_do_modelo_nao_derruba_a_revisao():
     comentario = analisar_pull_request(
         PullRequest("dono/repo", 1), repo, ConhecimentoFalso([REGRA_SEG]), LLMQueFalha()
     )
-    # Em vez de propagar a exceção, produz um bloco honesto de indisponibilidade.
-    assert "indisponível" in comentario
+    # Em vez de propagar a exceção, diz que o arquivo ficou sem avaliação — o
+    # que não é a mesma informação que "nenhuma violação encontrada".
+    assert "sem avaliação" in comentario
     assert "revisor humano" in comentario
+    assert "Nenhuma violação encontrada nos 1" not in comentario
 
 
 def test_falha_em_um_arquivo_nao_impede_os_demais():

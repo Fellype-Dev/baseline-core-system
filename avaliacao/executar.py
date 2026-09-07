@@ -120,7 +120,14 @@ def avaliar_caso(
             elementos = elementos_alterados(
                 arquivo.conteudo, linhas_alteradas(arquivo.diff)
             )
-        except SyntaxError:
+        except SyntaxError as erro:
+            # Silenciar aqui degradaria a medição sem deixar rastro: o caso
+            # seria avaliado só pelo diff, e o resultado pior apareceria como
+            # limitação do modelo em vez de erro no corpus.
+            print(
+                f"    AVISO: '{caso['nome']}' tem código inválido "
+                f"({erro.msg}); avaliado apenas pelo diff"
+            )
             elementos = []
 
     consulta = ConsultaDeRegras(

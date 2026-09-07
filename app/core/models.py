@@ -95,6 +95,33 @@ class Violacao:
 
 
 @dataclass(frozen=True)
+class ResultadoDoArquivo:
+    """O que a revisão apurou sobre um arquivo.
+
+    Existe para que o núcleo raciocine sobre O QUE aconteceu, e não sobre o
+    texto que descreve o que aconteceu. Antes, saber se um arquivo tinha achado
+    exigia procurar um emoji no markdown já montado — o que impedia, por
+    exemplo, resumir um Pull Request de dezoito arquivos sem reprocessar texto.
+    """
+
+    caminho: str
+    violacoes: tuple[Violacao, ...] = ()
+
+    # Aviso de sintaxe: o arquivo não pôde ser interpretado, mas a revisão
+    # seguiu pelo diff.
+    aviso: str = ""
+
+    # O modelo não pôde ser consultado, ou respondeu algo ilegível. Diferente
+    # de "nenhuma violação": aqui não houve avaliação, e um humano precisa
+    # olhar.
+    indisponivel: bool = False
+
+    @property
+    def tem_achado(self) -> bool:
+        return bool(self.violacoes) or bool(self.aviso) or self.indisponivel
+
+
+@dataclass(frozen=True)
 class ElementoDeCodigo:
 
     tipo: str          

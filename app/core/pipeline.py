@@ -7,6 +7,7 @@ from app.core.models import (
     EventoDeProgresso,
     PullRequest,
     RegraArquitetural,
+    ResultadoDoArquivo,
 )
 from app.core.observador import ObservadorNulo
 from app.core.ports import (
@@ -19,12 +20,15 @@ from app.services.ast_service import (
     elementos_alterados,
     extrair_esqueleto,
     identificar_linguagem,
+    linhas_de_texto_literal,
 )
 from app.services.diff_service import linhas_alteradas
 from app.services.prompt_service import montar_prompt, montar_prompt_de_estrutura
 from app.services.resultado_service import (
+    avaliar_resposta,
     formatar_erro_de_sintaxe,
     montar_comentario_de_avaliacao,
+    montar_comentario_do_pr,
 )
 from app.services.sdd_service import ErroDeSDD, interpretar_sdd
 
@@ -48,13 +52,6 @@ def merece_revisao(evento: str) -> bool:
     return evento in EVENTOS_QUE_PEDEM_REVISAO
 
 
-_MODELO_INDISPONIVEL = (
-    "## ⚠️ Revisão arquitetural indisponível para este arquivo\n\n"
-    "O modelo de linguagem não pôde ser consultado desta vez. Um revisor "
-    "humano deve avaliar as alterações deste arquivo."
-)
-
-
 def revisar_pull_request(
     pr: PullRequest,
     repositorio: RepositorioPort,
@@ -67,7 +64,7 @@ def revisar_pull_request(
     comentario = analisar_pull_request(
         pr, repositorio, conhecimento, llm, observador
     )
-    repositorio.publicar_comentario(pr, comentario)
+    repositorio.publicar_revisao(pr, comentario)
     _anunciar(observador, "comentario", f"Comentário publicado no PR #{pr.numero}.")
     _anunciar(observador, "concluido", "Revisão concluída.")
 
@@ -104,23 +101,22 @@ def analisar_pull_request(
         f"{len(arquivos)} arquivo(s) alterado(s) obtido(s) do repositório.",
     )
 
-    blocos: list[str] = list(blocos_de_estrutura)
+    resultados: list[ResultadoDoArquivo] = []
     for arquivo in arquivos:
-        comentario = _revisar_arquivo(
+        resultado = _revisar_arquivo(
             arquivo, pr.repositorio, conhecimento, llm, observador
         )
-        if comentario is not None:
-            blocos.append(f"**Arquivo:** `{arquivo.caminho}`\n\n{comentario}")
+        if resultado is not None:
+            resultados.append(resultado)
 
-    if not blocos:
+    if not resultados and not blocos_de_estrutura:
         return (
             "# Revisão Arquitetural\n\n"
             "Nenhuma regra arquitetural se aplica às alterações deste "
             "Pull Request."
         )
 
-    corpo = "\n\n---\n\n".join(blocos)
-    return f"# Revisão Arquitetural de Pull Request\n\n{corpo}"
+    return montar_comentario_do_pr(resultados, blocos_de_estrutura)
 
 
 def _carregar_regras_do_repositorio(
@@ -207,8 +203,13 @@ def _revisar_arquivo(
     conhecimento: ConhecimentoPort,
     llm: LLMPort,
     observador: ObservadorPort,
-) -> str | None:
+) -> ResultadoDoArquivo | None:
+    """O que a revisão apurou sobre este arquivo, ou None se não houve o que ver.
 
+    Devolve estrutura, e não texto formatado: é o que permite ao chamador
+    resumir o Pull Request inteiro — separar o que pede ação do que não pede
+    exige saber o que aconteceu, não ler o markdown que descreve.
+    """
     linguagem = identificar_linguagem(arquivo.caminho)
 
 
@@ -246,8 +247,11 @@ def _revisar_arquivo(
             "rag",
             f"`{arquivo.caminho}`: nenhuma regra aplicável — arquivo ignorado.",
         )
-
-        return aviso
+        # Sem regra não houve avaliação; só o aviso de sintaxe, se houver,
+        # ainda é informação útil ao autor.
+        if aviso:
+            return ResultadoDoArquivo(arquivo.caminho, aviso=aviso)
+        return None
 
     identificadores = ", ".join(regra.identificador for regra in regras)
     _anunciar(
@@ -270,27 +274,41 @@ def _revisar_arquivo(
             "erro",
             f"`{arquivo.caminho}`: o modelo não pôde ser consultado.",
         )
-        return _combinar(aviso, _MODELO_INDISPONIVEL)
-
+        return ResultadoDoArquivo(
+            arquivo.caminho, aviso=aviso or "", indisponivel=True
+        )
 
     # A conferência da linha só faz sentido quando o modelo recebeu a listagem
     # numerada. Sem elementos isolados não há numeração no prompt, e cobrar um
     # número que não foi oferecido descartaria apontamentos legítimos.
-    comentario = montar_comentario_de_avaliacao(
+    violacoes = avaliar_resposta(
         resposta,
         frozenset(regra.identificador for regra in regras),
         codigo_revisado=arquivo.conteudo if elementos else None,
+        linhas_ignoradas=(
+            linhas_de_texto_literal(arquivo.conteudo) if elementos else frozenset()
+        ),
     )
+
+    if violacoes is None:
+        _log.warning(
+            "Resposta ilegível do modelo ao avaliar %s.", arquivo.caminho
+        )
+        _anunciar(
+            observador,
+            "erro",
+            f"`{arquivo.caminho}`: resposta do modelo ilegível.",
+        )
+        return ResultadoDoArquivo(
+            arquivo.caminho, aviso=aviso or "", indisponivel=True
+        )
+
     _anunciar(
         observador, "avaliado", f"`{arquivo.caminho}`: avaliação concluída."
     )
-    return _combinar(aviso, comentario)
-
-
-def _combinar(aviso: str | None, comentario: str) -> str:
-    if aviso is None:
-        return comentario
-    return f"{aviso}\n\n{comentario}"
+    return ResultadoDoArquivo(
+        arquivo.caminho, tuple(violacoes), aviso=aviso or ""
+    )
 
 
 def _anunciar(observador: ObservadorPort, etapa: str, descricao: str) -> None:

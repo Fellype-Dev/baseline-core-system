@@ -170,7 +170,7 @@ def _adaptador_para(pull):
 
 def test_primeira_revisao_cria_o_comentario():
     pull = _PullComComentarios()
-    _adaptador_para(pull).publicar_comentario(PullRequest("dono/repo", 7), "## Revisão")
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão")
 
     (criado,) = pull.criados
     assert "## Revisão" in criado.body
@@ -180,7 +180,7 @@ def test_revisao_seguinte_reescreve_a_anterior():
     anterior = _ComentarioFalso("<!-- revisao-arquitetural -->\n## Revisão antiga")
     pull = _PullComComentarios([anterior])
 
-    _adaptador_para(pull).publicar_comentario(PullRequest("dono/repo", 7), "## Revisão nova")
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão nova")
 
     assert pull.criados == []
     assert "## Revisão nova" in anterior.body
@@ -192,7 +192,7 @@ def test_comentario_de_outra_pessoa_nao_e_sobrescrito():
     humano = _ComentarioFalso("Boa, mas revisa o nome dessa variável")
     pull = _PullComComentarios([humano])
 
-    _adaptador_para(pull).publicar_comentario(PullRequest("dono/repo", 7), "## Revisão")
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão")
 
     assert humano.edicoes == []
     assert len(pull.criados) == 1
@@ -201,7 +201,7 @@ def test_comentario_de_outra_pessoa_nao_e_sobrescrito():
 def test_marca_fica_invisivel_no_inicio_do_corpo():
     """Comentário HTML: o GitHub não o renderiza, mas ele permite reencontrar."""
     pull = _PullComComentarios()
-    _adaptador_para(pull).publicar_comentario(PullRequest("dono/repo", 7), "## Revisão")
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão")
 
     (criado,) = pull.criados
     assert criado.body.startswith("<!-- revisao-arquitetural -->")

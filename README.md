@@ -124,11 +124,18 @@ venv\Scripts\python.exe -m pip install -r requirements.txt
 venv\Scripts\python.exe -m pip install -r requirements.lock.txt  # ambiente exato
 ```
 
-Baixe o modelo de linguagem:
+Baixe o modelo de linguagem e crie a variante usada pela ferramenta:
 
 ```bash
 ollama pull gpt-oss:20b
+ollama create marvin -f Modelfile
 ```
+
+O segundo comando não é opcional. O Ollama executa com janela de contexto de
+4096 tokens por padrão, independente do que o modelo suporta, e **trunca em
+silêncio** o prompt que a excede — a revisão sai vazia, ou pior, apoiada em
+metade do arquivo. O `Modelfile` na raiz do projeto amplia a janela; o
+endpoint compatível com a OpenAI não aceita esse ajuste na requisição.
 
 O SDD de cada repositório é lido automaticamente no momento da revisão, e
 reindexado apenas quando muda. O script abaixo serve para indexar um SDD local
@@ -167,7 +174,7 @@ venv\Scripts\python.exe -m pytest -m "not integracao"   # rápidos
 venv\Scripts\python.exe -m pytest                       # todos
 ```
 
-São 206 testes. Os marcados como `integracao` exigem o índice vetorial
+São 219 testes. Os marcados como `integracao` exigem o índice vetorial
 construído e o modelo de linguagem em execução; os demais rodam sem rede e são
 executados a cada envio pela integração contínua.
 

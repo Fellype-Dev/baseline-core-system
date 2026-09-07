@@ -3,7 +3,7 @@ import json
 import re
 from dataclasses import replace
 
-from app.core.models import Violacao
+from app.core.models import ResultadoDoArquivo, Violacao
 
 
 class RespostaInvalidaError(Exception):
@@ -102,16 +102,23 @@ def descartar_regras_desconhecidas(
 
 
 def anexar_evidencia(
-    violacoes: list[Violacao], codigo_revisado: str
+    violacoes: list[Violacao],
+    codigo_revisado: str,
+    linhas_ignoradas: set[int] | frozenset[int] = frozenset(),
 ) -> list[Violacao]:
-    """Troca o número apontado pelo texto real da linha, ou descarta."""
+    """Troca o número apontado pelo texto real da linha, ou descarta.
 
+    `linhas_ignoradas` recebe as linhas que não são instrução — continuação de
+    literais de texto, onde o arquivo guarda código como dado.
+    """
     linhas = codigo_revisado.splitlines()
     if not linhas:
         return violacoes
 
     com_evidencia = []
     for violacao in violacoes:
+        if violacao.linha in linhas_ignoradas:
+            continue
         texto = _linha_do_codigo(linhas, violacao.linha)
         if texto is None:
             continue
@@ -180,7 +187,7 @@ def formatar_erro_de_sintaxe(linha: int | None, mensagem: str) -> str:
 
     local = f" na linha {linha}" if linha else ""
     return (
-        "## ⚠️ Erro de sintaxe\n\n"
+        "**⚠️ Erro de sintaxe**\n\n"
         f"Este arquivo não pôde ser interpretado{local}: {mensagem}.\n\n"
         "A análise estrutural foi ignorada neste arquivo; a revisão a seguir "
         "considerou apenas as linhas alteradas."
@@ -240,3 +247,144 @@ def _candidatos_de_json(texto: str):
     fim = texto.rfind("}")
     if inicio != -1 and fim > inicio:
         yield texto[inicio : fim + 1]
+
+
+# --- Comentário do Pull Request ---------------------------------------------
+#
+# Um Pull Request de dezoito arquivos gerava dezoito blocos, quinze deles
+# repetindo "nenhuma violação encontrada". O leitor desiste antes de chegar aos
+# que importam, e o arquivo que ficou SEM avaliação se confunde com os que
+# passaram — sendo que só o primeiro exige alguém olhar.
+#
+# Daí a hierarquia: o que pede ação fica aberto, o resto fica recolhido, e as
+# duas coisas que não são a mesma (não avaliado, avaliado sem achado) ficam
+# separadas.
+
+_NAO_AVALIADO = (
+    "Não foi possível obter uma avaliação do modelo para este arquivo. "
+    "Um revisor humano deve olhá-lo."
+)
+
+
+def avaliar_resposta(
+    resposta_llm: str,
+    identificadores_validos: frozenset[str],
+    codigo_revisado: str | None = None,
+    linhas_ignoradas: set[int] | frozenset[int] = frozenset(),
+) -> list[Violacao] | None:
+    """Interpreta e filtra a resposta; devolve None quando ela é ilegível.
+
+    Distinguir "ilegível" de "lista vazia" é o que permite ao núcleo saber que
+    um arquivo ficou sem avaliação. Enquanto a única saída era markdown pronto,
+    essa diferença se perdia no caminho.
+    """
+    try:
+        violacoes = interpretar_violacoes(resposta_llm)
+    except RespostaInvalidaError:
+        return None
+
+    violacoes = descartar_regras_desconhecidas(violacoes, identificadores_validos)
+    if codigo_revisado is not None:
+        violacoes = anexar_evidencia(
+            violacoes, codigo_revisado, linhas_ignoradas
+        )
+    return violacoes
+
+
+def montar_comentario_do_pr(
+    resultados: list[ResultadoDoArquivo],
+    blocos_de_estrutura: list[str] | tuple[str, ...] = (),
+) -> str:
+
+    destacados = [r for r in resultados if r.violacoes or r.aviso]
+    nao_avaliados = [
+        r for r in resultados if r.indisponivel and not (r.violacoes or r.aviso)
+    ]
+    limpos = [r for r in resultados if not r.tem_achado]
+
+    partes = ["# Revisão Arquitetural", _resumo(resultados, nao_avaliados)]
+    partes.extend(blocos_de_estrutura)
+    partes.extend(_bloco_do_arquivo(r) for r in destacados)
+
+    if nao_avaliados:
+        partes.append(
+            _recolhido(
+                f"⚠️ {_contar(len(nao_avaliados), 'arquivo não avaliado', 'arquivos não avaliados')}",
+                _lista_de_caminhos(nao_avaliados) + f"\n\n{_NAO_AVALIADO}",
+            )
+        )
+
+    if limpos:
+        partes.append(
+            _recolhido(
+                f"✅ {_contar(len(limpos), 'arquivo sem apontamentos', 'arquivos sem apontamentos')}",
+                _lista_de_caminhos(limpos),
+            )
+        )
+
+    return "\n\n".join(partes)
+
+
+def _resumo(resultados, nao_avaliados) -> str:
+
+    total = len(resultados)
+    violacoes = sum(len(r.violacoes) for r in resultados)
+    arquivos_com_violacao = sum(1 for r in resultados if r.violacoes)
+
+    if violacoes:
+        return (
+            f"🔴 **{_contar(violacoes, 'violação encontrada', 'violações encontradas')}** "
+            f"em {arquivos_com_violacao} de {_contar(total, 'arquivo', 'arquivos')} "
+            "analisados."
+        )
+    if nao_avaliados:
+        return (
+            "⚠️ Nenhuma violação encontrada nos arquivos avaliados, mas "
+            f"{_contar(len(nao_avaliados), 'arquivo ficou', 'arquivos ficaram')} "
+            "sem avaliação."
+        )
+    if not total:
+        return "Nenhum arquivo analisável neste Pull Request."
+    return (
+        f"✅ Nenhuma violação encontrada nos "
+        f"{_contar(total, 'arquivo analisado', 'arquivos analisados')}."
+    )
+
+
+def _bloco_do_arquivo(resultado: ResultadoDoArquivo) -> str:
+
+    partes = [f"### `{resultado.caminho}`"]
+    if resultado.aviso:
+        partes.append(resultado.aviso)
+    if resultado.indisponivel:
+        partes.append(_NAO_AVALIADO)
+    partes.extend(_bloco_da_violacao(v) for v in resultado.violacoes)
+    return "\n\n".join(partes)
+
+
+def _bloco_da_violacao(violacao: Violacao) -> str:
+
+    titulo = f"**{sanear_texto_do_modelo(violacao.regra)}**"
+    elemento = sanear_texto_do_modelo(violacao.elemento)
+    if elemento:
+        titulo += f" — em `{elemento}`"
+
+    partes = [titulo]
+    trecho = _formatar_evidencia(violacao)
+    if trecho:
+        partes.append(trecho)
+    partes.append(sanear_texto_do_modelo(violacao.explicacao))
+    return "\n\n".join(partes)
+
+
+def _recolhido(titulo: str, corpo: str) -> str:
+    """Bloco que o GitHub mostra fechado, com o título sempre visível."""
+    return f"<details>\n<summary>{titulo}</summary>\n\n{corpo}\n\n</details>"
+
+
+def _lista_de_caminhos(resultados) -> str:
+    return " · ".join(f"`{r.caminho}`" for r in resultados)
+
+
+def _contar(quantidade: int, singular: str, plural: str) -> str:
+    return f"{quantidade} {singular if quantidade == 1 else plural}"

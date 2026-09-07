@@ -6,6 +6,7 @@ from app.services.ast_service import (
     elementos_alterados,
     extrair_esqueleto,
     identificar_linguagem,
+    linhas_de_texto_literal,
 )
 
 # Arquivo de exemplo. Números de linha (importam para os testes de intervalo):
@@ -100,3 +101,50 @@ def test_elementos_alterados_isola_apenas_o_que_mudou():
     assert nomes == {"Calculadora", "Calculadora.calcular"}
     assert "soma" not in nomes
     assert "Calculadora.__init__" not in nomes
+
+
+# --- Código guardado como dado ----------------------------------------------
+#
+# Regressão de um falso positivo real: um `pass` dentro de uma fixture de teste
+# foi apontado como exceção silenciada. A linha estava dentro de uma string —
+# é dado, não instrução.
+
+#   1 BASE = (
+#   2     "def publicar():"
+#   3     "    try:"
+#   4     "        enviar()"
+#   5     "    except Exception:"
+#   6     "        pass"
+#   7 )
+#   8 CHAVE = "sk-1234567890"
+CODIGO_COM_FIXTURE = '''BASE = (
+    "def publicar():"
+    "    try:"
+    "        enviar()"
+    "    except Exception:"
+    "        pass"
+)
+CHAVE = "sk-1234567890"
+'''
+
+
+def test_continuacao_de_literal_e_reconhecida_como_dado():
+    linhas = linhas_de_texto_literal(CODIGO_COM_FIXTURE)
+    # A linha 6 é o `pass` de mentira, dentro da string.
+    assert 6 in linhas
+
+
+def test_primeira_linha_do_literal_fica_de_fora():
+    """É onde mora um segredo escrito no código, e isso é violação de verdade."""
+    linhas = linhas_de_texto_literal(CODIGO_COM_FIXTURE)
+    assert 8 not in linhas
+    assert 2 not in linhas
+
+
+def test_codigo_de_verdade_nao_e_marcado():
+    linhas = linhas_de_texto_literal(CODIGO)
+    assert linhas == set()
+
+
+def test_arquivo_invalido_nao_quebra():
+    assert linhas_de_texto_literal("def quebrado(") == set()
