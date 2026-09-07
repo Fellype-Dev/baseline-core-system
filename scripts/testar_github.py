@@ -22,7 +22,12 @@ def principal() -> None:
     pr = PullRequest(repositorio=argumentos[0], numero=int(argumentos[1]))
 
 
-    from main import conhecimento, llm, repositorio 
+    # Sem uma entrega de webhook não há instalação do App a consultar, então o
+    # ensaio manual usa o token pessoal — o mesmo caminho alternativo que o
+    # composition root já prevê para desenvolvimento.
+    from main import _repositorio_para, conhecimento, llm
+
+    repositorio = _repositorio_para(None)
 
     modo = "PUBLICANDO no PR" if postar else "ENSAIO (sem postar)"
     print(f"Revisando {pr.repositorio} PR #{pr.numero} — {modo}\n")

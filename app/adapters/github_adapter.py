@@ -30,9 +30,22 @@ def _diretorios_de(caminho: str) -> set[str]:
 
 class GitHubAdapter(RepositorioPort):
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str | None = None, *, cliente: Github | None = None) -> None:
+        """Cria o adaptador a partir de um token OU de um cliente já autenticado.
 
-        self._cliente = Github(auth=Auth.Token(token))
+        As duas formas existem porque há duas maneiras de autenticar no GitHub.
+        Com token pessoal, o adaptador monta o cliente sozinho. Com GitHub App, a
+        credencial depende de qual instalação disparou o evento, e o cliente é
+        montado fora — pela fábrica, que sabe fazer essa troca.
+        """
+        if cliente is not None:
+            self._cliente = cliente
+        elif token is not None:
+            self._cliente = Github(auth=Auth.Token(token))
+        else:
+            raise ValueError(
+                "informe um token ou um cliente já autenticado para criar o adaptador"
+            )
 
     def obter_arquivos_alterados(self, pr: PullRequest) -> list[ArquivoAlterado]:
         repositorio = self._cliente.get_repo(pr.repositorio)
