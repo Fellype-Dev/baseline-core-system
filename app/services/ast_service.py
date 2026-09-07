@@ -27,7 +27,7 @@ class _ColetorDeElementos(ast.NodeVisitor):
                 tipo="classe",
                 nome=node.name,
                 assinatura=f"class {node.name}",
-                linha_inicio=node.lineno,
+                linha_inicio=_primeira_linha(node),
                 linha_fim=node.end_lineno or node.lineno,
             )
         )
@@ -54,10 +54,25 @@ class _ColetorDeElementos(ast.NodeVisitor):
                 tipo=tipo,
                 nome=nome,
                 assinatura=assinatura,
-                linha_inicio=node.lineno,
+                linha_inicio=_primeira_linha(node),
                 linha_fim=node.end_lineno or node.lineno,
             )
         )
+
+
+def _primeira_linha(node) -> int:
+    """Onde o elemento realmente começa, contando os decoradores.
+
+    A AST aponta `lineno` para a palavra `def`/`class`, deixando os decoradores
+    de fora. Mas o decorador faz parte do elemento e costuma ser justamente o
+    que interessa a uma revisão arquitetural — `@router.post` diz que a função
+    é um ponto de entrada HTTP. Sem ele, o elemento chega incompleto a quem
+    julga.
+    """
+    decoradores = getattr(node, "decorator_list", [])
+    if not decoradores:
+        return node.lineno
+    return min(node.lineno, *(d.lineno for d in decoradores))
 
 
 def extrair_esqueleto(codigo: str) -> list[ElementoDeCodigo]:
@@ -66,6 +81,33 @@ def extrair_esqueleto(codigo: str) -> list[ElementoDeCodigo]:
     coletor = _ColetorDeElementos()
     coletor.visit(arvore)
     return coletor.elementos
+
+
+def linhas_de_texto_literal(codigo: str) -> set[int]:
+    """Linhas que são continuação de um literal de texto de várias linhas.
+
+    Um arquivo guarda código como DADO com frequência — fixtures de teste,
+    exemplos em docstring, gabaritos. Julgar essas linhas como se fossem
+    código do arquivo produz apontamento sobre algo que não executa: foi
+    assim que um `pass` dentro de uma string de teste virou "exceção
+    silenciada".
+
+    A PRIMEIRA linha do literal fica de fora de propósito. É nela que mora um
+    segredo escrito no código (`API_KEY = "sk-..."`), e essa é uma violação
+    real que precisa continuar sendo apontada. Só as linhas de continuação
+    são, necessariamente, conteúdo e não instrução.
+    """
+    try:
+        arvore = ast.parse(codigo)
+    except SyntaxError:
+        return set()
+
+    linhas: set[int] = set()
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.Constant) and isinstance(no.value, str):
+            fim = no.end_lineno or no.lineno
+            linhas.update(range(no.lineno + 1, fim + 1))
+    return linhas
 
 
 def elementos_alterados(

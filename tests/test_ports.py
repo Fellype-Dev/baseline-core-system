@@ -17,7 +17,7 @@ def test_implementacao_completa_satisfaz_o_contrato():
         def obter_arquivos_alterados(self, pr):
             return []
 
-        def publicar_comentario(self, pr, texto):
+        def publicar_revisao(self, pr, texto):
             pass
 
         def obter_documento_sdd(self, pr):
@@ -35,7 +35,7 @@ def test_implementacao_incompleta_e_recusada():
         def obter_arquivos_alterados(self, pr):
             return []
 
-        # Falta publicar_comentario de propósito.
+        # Falta publicar_revisao de propósito.
 
     # O contrato tem "dentes": sem todos os métodos, o Python recusa criar.
     with pytest.raises(TypeError):

@@ -14,7 +14,7 @@ from app.api.conhecimento import criar_router_conhecimento
 from app.api.eventos import criar_router_eventos
 from app.api.webhook import criar_router_webhook
 from app.core.models import EventoDeProgresso, PullRequest
-from app.core.pipeline import revisar_pull_request
+from app.core.pipeline import merece_revisao, revisar_pull_request
 
 logging.basicConfig(level=logging.INFO)
 
@@ -59,13 +59,22 @@ def _repositorio_para(instalacao: int | None):
     )
 
 
-def ao_receber_pull_request(pr: PullRequest, instalacao: int | None = None) -> None:
+def ao_receber_pull_request(
+    pr: PullRequest, evento: str = "aberto", instalacao: int | None = None
+) -> None:
 
-    print(f"Processando PR #{pr.numero} em {pr.repositorio}...")
+    # A política de quando revisar é do núcleo; aqui só se pergunta a ela.
+    if not merece_revisao(evento):
+        print(f"PR #{pr.numero}: evento '{evento}' não pede revisão.")
+        return
+
+    print(f"Processando PR #{pr.numero} em {pr.repositorio} ({evento})...")
     observador.registrar(
         EventoDeProgresso(
             etapa="webhook",
-            descricao=f"Pull Request #{pr.numero} recebido de {pr.repositorio}.",
+            descricao=(
+                f"Pull Request #{pr.numero} de {pr.repositorio}: {evento}."
+            ),
         )
     )
     try:

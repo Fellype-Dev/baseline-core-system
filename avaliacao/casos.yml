@@ -79,16 +79,23 @@ casos:
           for destino in destinos:
               publicar(cliente, destino, texto)
 
-  - nome: ano_fixo_em_titulo
-    caminho: app/relatorios/titulos.py
-    esperado: [DOC-001]
+  - nome: nucleo_escolhe_implementacao_por_ambiente
+    caminho: app/core/revisao.py
+    esperado: [ARQ-004]
     codigo: |
-      TITULO_DO_RELATORIO = "Relatorio de Conformidade 2025"
-      SUBTITULO = "Guia do Usuario 2025"
+      import os
+
+      from app.core.ports import LLMPort, RepositorioPort
 
 
-      def cabecalho() -> str:
-          return f"{TITULO_DO_RELATORIO} - {SUBTITULO}"
+      def revisar(pr, repositorio: RepositorioPort, llm: LLMPort) -> list[str]:
+          # O nucleo lendo o ambiente: a montagem pertence ao ponto de composicao.
+          limite = int(os.environ["LIMITE_DE_ARQUIVOS"])
+          if os.getenv("MODO_ESTRITO") == "1":
+              limite = limite * 2
+
+          arquivos = repositorio.obter_arquivos_alterados(pr)[:limite]
+          return [llm.avaliar(arquivo.diff) for arquivo in arquivos]
 
   - nome: segredo_e_excecao_silenciada
     caminho: app/servicos/integracao.py

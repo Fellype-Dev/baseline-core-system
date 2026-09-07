@@ -16,6 +16,10 @@ Blocos que capturam exceções não podem descartá-las sem tratamento ou regist
 Toda exceção capturada deve ser tratada, registrada em log ou repropagada com
 contexto adicional.
 
+A amplitude da captura não é o critério. Um `except Exception` que registra o
+erro em log, o repropaga ou o converte em erro de domínio está em conformidade.
+O que esta regra proíbe é o erro desaparecer sem deixar rastro.
+
 ## Motivação
 
 Capturar uma exceção genérica e seguir a execução silenciosamente esconde
@@ -25,8 +29,13 @@ causa, geralmente em produção.
 
 ## Como identificar
 
-Blocos `except` cujo corpo seja apenas `pass`, ou que capturem `Exception` de
-forma ampla sem registrar nem repropagar.
+Examine o CORPO do bloco `except`, não a exceção capturada. Há violação quando o
+corpo é apenas `pass`, ou quando retorna, continua ou segue adiante sem registrar
+o erro em lugar nenhum.
+
+Não há violação quando o corpo contém chamada de log, `raise`, ou a conversão da
+exceção em um erro de domínio — mesmo que a captura seja de `Exception`. Se o
+corpo do bloco não estiver visível no trecho recebido, não aponte esta regra.
 
 ## Exemplo incorreto
 

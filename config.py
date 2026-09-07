@@ -38,7 +38,15 @@ GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
 GEMINI_MODEL = "gemini-2.5-flash"
 
 
-LLM_LOCAL_MODELO = os.getenv("LLM_LOCAL_MODELO", "qwen2.5-coder:14b")
+# Escolhido por medição, não por porte. Contra o `qwen2.5-coder:14b`, no mesmo
+# corpus e no mesmo SDD, o F1 empata (95,8% contra 96,0%) — o que muda é o
+# caráter do erro: zero alarmes falsos em 30 avaliações de código conforme,
+# contra 1, ao custo de deixar passar um pouco mais. Para uma ferramenta que
+# comenta em Pull Request alheio, acusar à toa custa mais caro do que calar.
+# `marvin` é o gpt-oss:20b com a janela de contexto ampliada — veja o Modelfile
+# na raiz do projeto e o porquê documentado nele. Apontar direto para
+# `gpt-oss:20b` funciona, mas trunca prompts de arquivos grandes em silêncio.
+LLM_LOCAL_MODELO = os.getenv("LLM_LOCAL_MODELO", "marvin")
 LLM_LOCAL_URL = os.getenv(
     "LLM_LOCAL_URL", "http://localhost:11434/v1/chat/completions"
 )

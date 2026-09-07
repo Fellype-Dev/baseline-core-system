@@ -1,0 +1,24 @@
+# Modelo derivado para a revisão arquitetural.
+#
+# Existe por um motivo só, e ele custou caro para ser descoberto: o Ollama
+# executa com `num_ctx` de 4096 por padrão, independente do que o modelo
+# suporta (o gpt-oss aceita 131072). Prompt maior que isso é TRUNCADO EM
+# SILÊNCIO — o servidor não avisa, e o modelo responde sobre o pedaço que
+# sobrou. Em arquivos reais, mais da metade do prompt era descartada antes de
+# chegar ao modelo, e a revisão saía ou vazia ou apoiada em código incompleto.
+#
+# O endpoint compatível com a OpenAI não aceita `num_ctx` na requisição, então
+# o ajuste precisa estar no modelo. Ficar aqui, versionado, é melhor do que
+# depender de uma variável de ambiente que alguém precise lembrar de definir.
+#
+#   ollama create marvin -f Modelfile
+#
+# 16384 cobre com folga o maior prompt que a ferramenta monta (o limite de
+# alerta é de 32000 caracteres, algo em torno de 9000 tokens) e ainda deixa
+# espaço para a resposta, sem inflar o cache de atenção a ponto de expulsar o
+# modelo da GPU.
+
+FROM gpt-oss:20b
+
+PARAMETER num_ctx 16384
+PARAMETER temperature 0

@@ -1,0 +1,393 @@
+# Terceiro conjunto de avaliação — reservado, com diffs parciais.
+#
+# Os dois conjuntos anteriores (casos.yml e validacao.yml) declaram apenas
+# `codigo`, e o harness os transforma em diff de arquivo novo: toda linha é uma
+# adição, e o modelo recebe o arquivo inteiro. Nenhum deles consegue revelar
+# falha de contexto, porque contexto nunca falta neles.
+#
+# Aqui cada caso declara `codigo_base` além de `codigo`. O harness gera o diff
+# entre os dois com três linhas de contexto — o mesmo recorte que a API do
+# GitHub entrega. As edições estão posicionadas de propósito para que a janela
+# corte em pontos que mudam o julgamento.
+#
+# ATENÇÃO METODOLÓGICA: este conjunto é adversarial, não representativo. Ele
+# mede o quanto o contexto pesa quando o contexto é o fator limitante — não a
+# acurácia geral da ferramenta em Pull Requests típicos. Para não ser mero
+# exercício de confirmação, ele carrega risco nos dois sentidos: casos em que
+# a evidência da violação está dentro da janela (o corpo não pode fazer a
+# revocação cair) e casos conformes cujo corpo completo oferece iscas de
+# sobre-apontamento (o corpo pode fazer a precisão cair).
+
+casos:
+  # ------------------------------------------------------------------
+  # Violação com evidência DENTRO da janela do diff.
+  # O corpo completo não deve atrapalhar: a revocação tem de se manter.
+  # ------------------------------------------------------------------
+
+  - nome: segredo_adicionado_dentro_da_janela
+    caminho: app/adapters/pagamento_adapter.py
+    esperado: [SEG-001]
+    codigo_base: |
+      import requests
+
+
+      class PagamentoAdapter:
+          def __init__(self) -> None:
+              self._sessao = requests.Session()
+              self._sessao.headers["Accept"] = "application/json"
+
+          def cobrar(self, valor: float, cliente: str) -> dict:
+              resposta = self._sessao.post(
+                  "https://api.pagamentos.exemplo.com/cobrancas",
+                  json={"valor": valor, "cliente": cliente},
+              )
+              return resposta.json()
+    codigo: |
+      import requests
+
+
+      class PagamentoAdapter:
+          def __init__(self) -> None:
+              self._sessao = requests.Session()
+              self._sessao.headers["Accept"] = "application/json"
+              self._sessao.headers["Authorization"] = "Bearer sk_live_51H8xKjLmNoPqRs"
+
+          def cobrar(self, valor: float, cliente: str) -> dict:
+              resposta = self._sessao.post(
+                  "https://api.pagamentos.exemplo.com/cobrancas",
+                  json={"valor": valor, "cliente": cliente},
+              )
+              return resposta.json()
+
+  - nome: regra_de_negocio_adicionada_no_adaptador
+    caminho: app/adapters/notificacao_adapter.py
+    esperado: [ARQ-003]
+    codigo_base: |
+      import smtplib
+      from email.message import EmailMessage
+
+
+      class NotificacaoAdapter:
+          def __init__(self, servidor: str) -> None:
+              self._servidor = servidor
+
+          def avisar(self, destinatario: str, assunto: str, corpo: str) -> None:
+              mensagem = EmailMessage()
+              mensagem["To"] = destinatario
+              mensagem["Subject"] = assunto
+              mensagem.set_content(corpo)
+
+              with smtplib.SMTP(self._servidor) as conexao:
+                  conexao.send_message(mensagem)
+    codigo: |
+      import smtplib
+      from email.message import EmailMessage
+
+
+      class NotificacaoAdapter:
+          def __init__(self, servidor: str) -> None:
+              self._servidor = servidor
+
+          def avisar(self, destinatario: str, assunto: str, corpo: str) -> None:
+              # Decide quem merece ser avisado: isso e criterio de produto.
+              if destinatario.endswith("@terceirizada.exemplo.com"):
+                  return
+              if "urgente" not in assunto.lower() and len(corpo) < 200:
+                  return
+
+              mensagem = EmailMessage()
+              mensagem["To"] = destinatario
+              mensagem["Subject"] = assunto
+              mensagem.set_content(corpo)
+
+              with smtplib.SMTP(self._servidor) as conexao:
+                  conexao.send_message(mensagem)
+
+  # Duas regras, não uma: importar a biblioteca de rede viola ARQ-001, e
+  # alcançar o serviço externo por conta própria — em vez de receber a porta —
+  # viola ARQ-004. O gabarito original citava só ARQ-001; a correção veio da
+  # leitura do texto das duas regras, depois de o modelo apontar ambas.
+  - nome: nucleo_passa_a_chamar_a_rede
+    caminho: app/core/sincronizador.py
+    esperado: [ARQ-001, ARQ-004]
+    codigo_base: |
+      from app.core.models import PullRequest
+      from app.core.ports import RepositorioPort
+
+
+      def sincronizar(pr: PullRequest, repositorio: RepositorioPort) -> dict:
+          arquivos = repositorio.obter_arquivos_alterados(pr)
+          return {
+              "pr": pr.numero,
+              "quantidade": len(arquivos),
+          }
+    codigo: |
+      import requests
+
+      from app.core.models import PullRequest
+      from app.core.ports import RepositorioPort
+
+
+      def sincronizar(pr: PullRequest, repositorio: RepositorioPort) -> dict:
+          arquivos = repositorio.obter_arquivos_alterados(pr)
+          resposta = requests.get(
+              f"https://api.interna.exemplo.com/prs/{pr.numero}",
+              timeout=30,
+          )
+          return {
+              "pr": pr.numero,
+              "quantidade": len(arquivos),
+              "estado": resposta.json()["estado"],
+          }
+
+  # ------------------------------------------------------------------
+  # Violação com evidência FORA da janela do diff.
+  # Só o corpo completo revela o problema: aqui a revocação pode subir.
+  # ------------------------------------------------------------------
+
+  - nome: except_vazio_fora_da_janela
+    caminho: app/servicos/publicador.py
+    esperado: [QUA-001]
+    codigo_base: |
+      def publicar(pr, texto, cliente) -> bool:
+          if not texto:
+              return False
+
+          try:
+              mensagem = cliente.montar(pr, texto)
+              cliente.enviar(mensagem)
+          except Exception:
+              pass
+          return True
+    codigo: |
+      def publicar(pr, texto, cliente) -> bool:
+          if not texto:
+              return False
+
+          try:
+              texto = texto.strip()
+              mensagem = cliente.montar(pr, texto)
+              cliente.enviar(mensagem)
+          except Exception:
+              pass
+          return True
+
+  # ------------------------------------------------------------------
+  # Conformidade com a evidência FORA da janela do diff.
+  # É a falha observada em produção: sem o corpo, o modelo completa o que
+  # não viu e acusa um problema que não existe.
+  # ------------------------------------------------------------------
+
+  - nome: handler_com_log_fora_da_janela
+    caminho: app/servicos/eventos.py
+    esperado: []
+    codigo_base: |
+      import logging
+
+      _log = logging.getLogger(__name__)
+
+
+      def processar_evento(evento: dict, deposito) -> None:
+          identificador = evento.get("id")
+          if identificador is None:
+              return None
+
+          try:
+              registro = deposito.carregar(identificador)
+              deposito.salvar(registro.aplicar(evento))
+          except Exception:
+              _log.exception("Falha ao processar o evento %s.", identificador)
+              raise
+    codigo: |
+      import logging
+
+      _log = logging.getLogger(__name__)
+
+
+      def processar_evento(evento: dict, deposito) -> None:
+          identificador = evento.get("id")
+          if identificador is None:
+              return None
+
+          try:
+              evento = dict(evento)
+              registro = deposito.carregar(identificador)
+              deposito.salvar(registro.aplicar(evento))
+          except Exception:
+              _log.exception("Falha ao processar o evento %s.", identificador)
+              raise
+
+  - nome: excecao_repropagada_fora_da_janela
+    caminho: app/servicos/importador.py
+    esperado: []
+    codigo_base: |
+      class ErroDeImportacao(Exception):
+          pass
+
+
+      def importar(linhas: list[str]) -> list[dict]:
+          registros = []
+          for numero, linha in enumerate(linhas, start=1):
+              try:
+                  nome, valor = linha.split(";")
+                  registros.append({"nome": nome, "valor": float(valor)})
+              except ValueError as erro:
+                  raise ErroDeImportacao(f"falha na linha {numero}") from erro
+          return registros
+    codigo: |
+      class ErroDeImportacao(Exception):
+          pass
+
+
+      def importar(linhas: list[str]) -> list[dict]:
+          registros = []
+          for numero, linha in enumerate(linhas, start=1):
+              try:
+                  linha = linha.rstrip()
+                  nome, valor = linha.split(";")
+                  registros.append({"nome": nome, "valor": float(valor)})
+              except ValueError as erro:
+                  raise ErroDeImportacao(f"falha na linha {numero}") from erro
+          return registros
+
+  - nome: credencial_do_ambiente_fora_da_janela
+    caminho: app/servicos/banco.py
+    esperado: []
+    codigo_base: |
+      import os
+
+      import psycopg2
+
+
+      def abrir_conexao(nome_do_banco: str):
+          usuario = os.environ["DB_USER"]
+          senha = os.environ["DB_PASSWORD"]
+          servidor = os.environ["DB_HOST"]
+          porta = os.environ.get("DB_PORT", "5432")
+
+          if not nome_do_banco:
+              raise ValueError("nome do banco nao informado")
+
+          url = f"postgresql://{usuario}:{senha}@{servidor}:{porta}/{nome_do_banco}"
+          return psycopg2.connect(url)
+    codigo: |
+      import os
+
+      import psycopg2
+
+
+      def abrir_conexao(nome_do_banco: str):
+          usuario = os.environ["DB_USER"]
+          senha = os.environ["DB_PASSWORD"]
+          servidor = os.environ["DB_HOST"]
+          porta = os.environ.get("DB_PORT", "5432")
+
+          if not nome_do_banco:
+              raise ValueError("nome do banco nao informado")
+
+          endereco = f"{servidor}:{porta}"
+          url = f"postgresql://{usuario}:{senha}@{endereco}/{nome_do_banco}"
+          return psycopg2.connect(url)
+
+  # ------------------------------------------------------------------
+  # Conformidade com ISCA no corpo completo.
+  # O corpo mostra trecho que, lido fora de contexto, parece violação. Se o
+  # corpo induzir sobre-apontamento, a precisão cai aqui — é o risco que
+  # esta correção precisa correr para ser medida com honestidade.
+  # ------------------------------------------------------------------
+
+  - nome: adaptador_so_traduz_com_condicional_de_formato
+    caminho: app/adapters/github_adapter.py
+    esperado: []
+    codigo_base: |
+      from app.core.models import ArquivoAlterado
+
+
+      class GitHubAdapter:
+          def __init__(self, cliente) -> None:
+              self._cliente = cliente
+
+          def obter_arquivos_alterados(self, pr) -> list[ArquivoAlterado]:
+              arquivos = []
+              for item in self._cliente.arquivos(pr.numero):
+                  if item.patch is None:
+                      continue
+                  arquivos.append(
+                      ArquivoAlterado(item.caminho, item.patch, item.bruto.decode("utf-8"))
+                  )
+              return arquivos
+    codigo: |
+      from app.core.models import ArquivoAlterado
+
+
+      class GitHubAdapter:
+          def __init__(self, cliente) -> None:
+              self._cliente = cliente
+
+          def obter_arquivos_alterados(self, pr) -> list[ArquivoAlterado]:
+              arquivos = []
+              for item in self._cliente.arquivos(pr.numero):
+                  if item.patch is None:
+                      continue
+                  conteudo = item.bruto.decode("utf-8-sig")
+                  arquivos.append(
+                      ArquivoAlterado(item.caminho, item.patch, conteudo)
+                  )
+              return arquivos
+
+  # Substituiu uma isca de DOC-001, removida junto com a regra: um revisor
+  # arquitetural não tem o que dizer sobre anos fixos em títulos. A isca aqui é
+  # de ARQ-004 — o núcleo decide um caminho, mas decide a partir de um valor que
+  # chegou pela assinatura, que é exatamente o que a regra permite.
+  - nome: nucleo_decide_por_parametro_recebido
+    caminho: app/core/revisao.py
+    esperado: []
+    codigo_base: |
+      from app.core.ports import LLMPort, RepositorioPort
+
+
+      def revisar(pr, repositorio: RepositorioPort, llm: LLMPort) -> list[str]:
+          arquivos = repositorio.obter_arquivos_alterados(pr)
+          return [llm.avaliar(arquivo.diff) for arquivo in arquivos]
+    codigo: |
+      from app.core.ports import LLMPort, RepositorioPort
+
+
+      def revisar(
+          pr,
+          repositorio: RepositorioPort,
+          llm: LLMPort,
+          limite_de_arquivos: int = 0,
+      ) -> list[str]:
+          arquivos = repositorio.obter_arquivos_alterados(pr)
+          if limite_de_arquivos:
+              arquivos = arquivos[:limite_de_arquivos]
+          return [llm.avaliar(arquivo.diff) for arquivo in arquivos]
+
+  - nome: porta_ganha_metodo_pela_necessidade
+    caminho: app/core/ports.py
+    esperado: []
+    codigo_base: |
+      from abc import ABC, abstractmethod
+
+      from app.core.models import PullRequest
+
+
+      class NotificacaoPort(ABC):
+          @abstractmethod
+          def avisar_autor(self, pr: PullRequest, mensagem: str) -> None:
+              ...
+    codigo: |
+      from abc import ABC, abstractmethod
+
+      from app.core.models import PullRequest
+
+
+      class NotificacaoPort(ABC):
+          @abstractmethod
+          def avisar_autor(self, pr: PullRequest, mensagem: str) -> None:
+              ...
+
+          @abstractmethod
+          def avisar_equipe(self, mensagem: str) -> None:
+              ...

@@ -122,3 +122,86 @@ def test_arquivo_sem_patch_e_ignorado():
     adaptador._cliente = _ClienteFalso(repo)
 
     assert adaptador.obter_arquivos_alterados(PullRequest("dono/repo", 7)) == []
+
+
+# --- Publicação da revisão --------------------------------------------------
+#
+# O Pull Request é revisado a cada push, então publicar sempre um comentário
+# novo empilharia revisões repetidas. A revisão anterior é reescrita no lugar.
+
+class _ComentarioFalso:
+    def __init__(self, body):
+        self.body = body
+        self.edicoes = []
+
+    def edit(self, corpo):
+        self.edicoes.append(corpo)
+        self.body = corpo
+
+
+class _PullComComentarios:
+    def __init__(self, comentarios=()):
+        self._comentarios = list(comentarios)
+        self.criados = []
+
+    def get_issue_comments(self):
+        return self._comentarios
+
+    def create_issue_comment(self, corpo):
+        comentario = _ComentarioFalso(corpo)
+        self.criados.append(comentario)
+        self._comentarios.append(comentario)
+        return comentario
+
+
+class _RepoComPull:
+    def __init__(self, pull):
+        self._pull = pull
+
+    def get_pull(self, numero):
+        return self._pull
+
+
+def _adaptador_para(pull):
+    adaptador = GitHubAdapter(token="falso")
+    adaptador._cliente = _ClienteFalso(_RepoComPull(pull))
+    return adaptador
+
+
+def test_primeira_revisao_cria_o_comentario():
+    pull = _PullComComentarios()
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão")
+
+    (criado,) = pull.criados
+    assert "## Revisão" in criado.body
+
+
+def test_revisao_seguinte_reescreve_a_anterior():
+    anterior = _ComentarioFalso("<!-- revisao-arquitetural -->\n## Revisão antiga")
+    pull = _PullComComentarios([anterior])
+
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão nova")
+
+    assert pull.criados == []
+    assert "## Revisão nova" in anterior.body
+    assert "antiga" not in anterior.body
+
+
+def test_comentario_de_outra_pessoa_nao_e_sobrescrito():
+    """Só a marca da ferramenta identifica a revisão; o resto do PR é alheio."""
+    humano = _ComentarioFalso("Boa, mas revisa o nome dessa variável")
+    pull = _PullComComentarios([humano])
+
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão")
+
+    assert humano.edicoes == []
+    assert len(pull.criados) == 1
+
+
+def test_marca_fica_invisivel_no_inicio_do_corpo():
+    """Comentário HTML: o GitHub não o renderiza, mas ele permite reencontrar."""
+    pull = _PullComComentarios()
+    _adaptador_para(pull).publicar_revisao(PullRequest("dono/repo", 7), "## Revisão")
+
+    (criado,) = pull.criados
+    assert criado.body.startswith("<!-- revisao-arquitetural -->")

@@ -11,7 +11,11 @@ from app.core.models import (
     PullRequest,
     RegraArquitetural,
 )
-from app.core.pipeline import analisar_pull_request, revisar_pull_request
+from app.core.pipeline import (
+    analisar_pull_request,
+    merece_revisao,
+    revisar_pull_request,
+)
 
 
 # --- Dublês das portas ------------------------------------------------------
@@ -55,7 +59,7 @@ class RepositorioFalso:
     def obter_arquivos_alterados(self, pr):
         return self._arquivos
 
-    def publicar_comentario(self, pr, texto):
+    def publicar_revisao(self, pr, texto):
         self.comentario_publicado = texto
 
     def obter_documento_sdd(self, pr):
@@ -111,7 +115,16 @@ ARQUIVO_PY = ArquivoAlterado(
 )
 
 RESPOSTA_COM_VIOLACAO = json.dumps(
-    {"violacoes": [{"regra": "SEG-001", "elemento": "", "explicacao": "chave exposta"}]}
+    {
+        "violacoes": [
+            {
+                "regra": "SEG-001",
+                "elemento": "",
+                "linha": 2,
+                "explicacao": "chave exposta",
+            }
+        ]
+    }
 )
 
 
@@ -528,9 +541,11 @@ def test_falha_do_modelo_nao_derruba_a_revisao():
     comentario = analisar_pull_request(
         PullRequest("dono/repo", 1), repo, ConhecimentoFalso([REGRA_SEG]), LLMQueFalha()
     )
-    # Em vez de propagar a exceção, produz um bloco honesto de indisponibilidade.
-    assert "indisponível" in comentario
+    # Em vez de propagar a exceção, diz que o arquivo ficou sem avaliação — o
+    # que não é a mesma informação que "nenhuma violação encontrada".
+    assert "sem avaliação" in comentario
     assert "revisor humano" in comentario
+    assert "Nenhuma violação encontrada nos 1" not in comentario
 
 
 def test_falha_em_um_arquivo_nao_impede_os_demais():
@@ -562,3 +577,80 @@ def test_arquivo_nao_python_e_revisado_pelo_diff():
     # Sem AST para markdown: a linguagem não é reconhecida, mas a revisão segue.
     assert consulta.linguagem == ""
     assert consulta.caminho == "docs/manual.md"
+
+
+# --- Conferência da linha apontada ------------------------------------------
+
+ARQUIVO_COM_FUNCAO = ArquivoAlterado(
+    caminho="app/servicos/credenciais.py",
+    diff='@@ -1,2 +1,3 @@\n def carregar():\n+    return "sk-abc123"\n',
+    conteudo='def carregar():\n    return "sk-abc123"\n',
+)
+
+
+def _resposta_apontando(linha: int) -> str:
+    return json.dumps(
+        {"violacoes": [{"regra": "SEG-001", "linha": linha, "explicacao": "chave"}]}
+    )
+
+
+def test_linha_apontada_vira_trecho_no_comentario():
+    """O texto exibido vem do arquivo, não da resposta do modelo."""
+    repo = RepositorioFalso([ARQUIVO_COM_FUNCAO])
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(_resposta_apontando(2)),
+    )
+    assert '2 | return "sk-abc123"' in comentario
+
+
+def test_apontamento_com_linha_inexistente_nao_chega_ao_autor():
+    repo = RepositorioFalso([ARQUIVO_COM_FUNCAO])
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(_resposta_apontando(99)),
+    )
+    assert "SEG-001" not in comentario
+
+
+def test_sem_elementos_isolados_a_linha_nao_e_cobrada():
+    """Sem listagem numerada no prompt, exigir número descartaria achado válido."""
+    repo = RepositorioFalso([ARQUIVO_PY])
+    comentario = analisar_pull_request(
+        PullRequest("dono/repo", 1),
+        repo,
+        ConhecimentoFalso([REGRA_SEG]),
+        LLMFalso(_resposta_apontando(0)),
+    )
+    assert "SEG-001" in comentario
+
+
+# --- Política de quando revisar ---------------------------------------------
+#
+# Antes, "só revisamos na abertura" era uma condição dentro do adaptador de
+# webhook — decisão de produto escondida em quem fala o protocolo do GitHub.
+# A própria ferramenta apontou isso no seu código, contra a regra ARQ-003.
+
+def test_abertura_pede_revisao():
+    assert merece_revisao("aberto")
+
+
+def test_push_em_pr_aberto_pede_revisao():
+    """Sem isto a ferramenta aponta uma vez e nunca verifica a correção."""
+    assert merece_revisao("atualizado")
+
+
+def test_reabertura_pede_revisao():
+    assert merece_revisao("reaberto")
+
+
+def test_pr_fechado_nao_pede_revisao():
+    assert not merece_revisao("fechado")
+
+
+def test_evento_desconhecido_nao_pede_revisao():
+    assert not merece_revisao("qualquer_outra_coisa")

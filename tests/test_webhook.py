@@ -13,13 +13,16 @@ from app.core.models import PullRequest
 def _cliente_com_captura():
     """Monta um app de teste cuja ação apenas registra o que foi recebido.
 
-    Guarda pares (PullRequest, instalação) — a instalação é nula quando a
-    entrega não vem de um GitHub App.
+    Guarda triplas (PullRequest, evento, instalação). O evento vem em
+    vocabulário do domínio, já traduzido; a instalação é nula quando a entrega
+    não vem de um GitHub App.
     """
-    recebidos: list[tuple[PullRequest, int | None]] = []
+    recebidos: list[tuple[PullRequest, str, int | None]] = []
     app = FastAPI()
     app.include_router(
-        criar_router_webhook(lambda pr, instalacao: recebidos.append((pr, instalacao)))
+        criar_router_webhook(
+            lambda pr, evento, instalacao: recebidos.append((pr, evento, instalacao))
+        )
     )
     return TestClient(app), recebidos
 
@@ -37,7 +40,7 @@ def test_pr_aberto_e_traduzido_para_o_dominio():
     )
 
     assert resposta.status_code == 200
-    assert recebidos == [(PullRequest("dono/repo", 42), None)]
+    assert recebidos == [(PullRequest("dono/repo", 42), "aberto", None)]
 
 
 def test_instalacao_do_app_e_repassada():
@@ -54,10 +57,64 @@ def test_instalacao_do_app_e_repassada():
         },
     )
 
-    assert recebidos == [(PullRequest("outra/org", 3), 987654)]
+    assert recebidos == [(PullRequest("outra/org", 3), "aberto", 987654)]
 
 
-def test_evento_que_nao_e_abertura_e_ignorado():
+# --- Tradução do vocabulário do GitHub --------------------------------------
+#
+# O adaptador traduz a ação do GitHub para vocabulário do domínio e para por
+# aí. QUANDO revisar é decisão de produto, e mora no núcleo — antes ela estava
+# escondida numa condição deste arquivo, que reconhecia apenas `opened` e
+# descartava em silêncio todo o resto, inclusive os pushes seguintes.
+
+def _entregar(cliente, action: str, **extra):
+    cliente.post(
+        "/webhook",
+        json={
+            "action": action,
+            "repository": {"full_name": "dono/repo"},
+            "pull_request": {"number": 1},
+            **extra,
+        },
+    )
+
+
+def test_push_em_pr_aberto_vira_atualizado():
+    """É o evento que fecha o ciclo: o autor corrige e a correção é verificada."""
+    cliente, recebidos = _cliente_com_captura()
+    _entregar(cliente, "synchronize")
+
+    assert recebidos == [(PullRequest("dono/repo", 1), "atualizado", None)]
+
+
+def test_pr_reaberto_vira_reaberto():
+    cliente, recebidos = _cliente_com_captura()
+    _entregar(cliente, "reopened")
+
+    assert recebidos == [(PullRequest("dono/repo", 1), "reaberto", None)]
+
+
+def test_pr_fechado_atravessa_o_adaptador():
+    """`fechado` tem sentido no domínio, então é traduzido e repassado.
+
+    Recusá-lo aqui seria decidir política no adaptador. Quem sabe não haver
+    revisão a fazer num PR fechado é o núcleo.
+    """
+    cliente, recebidos = _cliente_com_captura()
+    _entregar(cliente, "closed")
+
+    assert recebidos == [(PullRequest("dono/repo", 1), "fechado", None)]
+
+
+def test_acao_sem_correspondencia_no_dominio_nao_passa():
+    """Não há como falar de um `labeled` em termos de domínio: é intraduzível."""
+    cliente, recebidos = _cliente_com_captura()
+    _entregar(cliente, "labeled")
+
+    assert recebidos == []
+
+
+def test_evento_que_nao_e_de_pull_request_e_ignorado():
     cliente, recebidos = _cliente_com_captura()
 
     cliente.post("/webhook", json={"action": "closed"})
@@ -77,11 +134,12 @@ PAYLOAD = {
 
 
 def _cliente_protegido():
-    recebidos: list[tuple[PullRequest, int | None]] = []
+    recebidos: list[tuple[PullRequest, str, int | None]] = []
     app = FastAPI()
     app.include_router(
         criar_router_webhook(
-            lambda pr, instalacao: recebidos.append((pr, instalacao)), SEGREDO
+            lambda pr, evento, instalacao: recebidos.append((pr, evento, instalacao)),
+            SEGREDO,
         )
     )
     return TestClient(app), recebidos
@@ -107,7 +165,7 @@ def test_entrega_assinada_corretamente_e_aceita():
     )
 
     assert resposta.status_code == 200
-    assert recebidos == [(PullRequest("dono/repo", 7), None)]
+    assert recebidos == [(PullRequest("dono/repo", 7), "aberto", None)]
 
 
 def test_entrega_sem_assinatura_e_recusada():
@@ -164,4 +222,4 @@ def test_sem_segredo_configurado_a_verificacao_fica_desligada():
     resposta = cliente.post("/webhook", json=PAYLOAD)
 
     assert resposta.status_code == 200
-    assert recebidos == [(PullRequest("dono/repo", 7), None)]
+    assert recebidos == [(PullRequest("dono/repo", 7), "aberto", None)]

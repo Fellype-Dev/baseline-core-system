@@ -6,7 +6,7 @@ severidade: obrigatoria
 status: ativa
 linguagens: [python]
 aplica_se_a:
-  - "app/core/**"
+  - "app/core/ports.py"
 excecoes: []
 ---
 
