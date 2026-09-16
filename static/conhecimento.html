@@ -5,7 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Base de Conhecimento — Regras Arquiteturais</title>
   <style>
+    /* Claro por padrão: em projetor, fundo escuro lava e o texto some.
+       O escuro continua disponível com ?tema=escuro na URL. */
     :root {
+      --fundo: #f6f7f9; --carta: #ffffff; --borda: #d9dde5;
+      --texto: #1c2130; --apagado: #6b7280;
+      --ativo: #2563eb; --pronto: #16a34a; --falha: #dc2626; --alerta: #d97706;
+    }
+    html[data-tema="escuro"] {
       --fundo: #0f1117; --carta: #171a23; --borda: #262b38;
       --texto: #e5e9f0; --apagado: #7d8799;
       --ativo: #3b82f6; --pronto: #22c55e; --falha: #ef4444; --alerta: #f59e0b;
@@ -84,6 +91,12 @@
     .descartada .barra i { background: var(--apagado); }
     .motivo { font-size: 0.72rem; color: var(--alerta); }
   </style>
+  <script>
+    // Antes de o corpo pintar, para não piscar: ?tema=escuro liga o tema escuro.
+    if (new URLSearchParams(location.search).get("tema") === "escuro") {
+      document.documentElement.dataset.tema = "escuro";
+    }
+  </script>
 </head>
 <body>
   <header>

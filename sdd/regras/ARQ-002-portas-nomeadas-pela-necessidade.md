@@ -12,20 +12,15 @@ excecoes: []
 
 ## Regra
 
-O nome de uma porta e a assinatura de seus métodos devem descrever a necessidade
-do domínio que ela atende, e nunca a tecnologia que a implementa.
+O nome de uma porta e a assinatura de seus métodos devem descrever a necessidade do domínio que ela atende, e nunca a tecnologia que a implementa.
 
 ## Motivação
 
-Quando o nome da porta carrega a tecnologia, o detalhe de implementação vaza
-para o núcleo e a substituição futura fica comprometida: trocar o banco vetorial
-exigiria renomear a porta e ajustar quem a usa. Nomes orientados à necessidade
-mantêm o núcleo estável mesmo quando a infraestrutura muda.
+Quando o nome da porta carrega a tecnologia, o detalhe de implementação vaza para o núcleo e a substituição futura fica comprometida: trocar o banco vetorial exigiria renomear a porta e ajustar quem a usa. Nomes orientados à necessidade mantêm o núcleo estável mesmo quando a infraestrutura muda.
 
 ## Como identificar
 
-Nomes de classes de porta ou de seus métodos que citem produtos, protocolos ou
-bibliotecas específicas em vez do conceito de domínio.
+Nomes de classes de porta ou de seus métodos que citem produtos, protocolos ou bibliotecas específicas em vez do conceito de domínio.
 
 ## Exemplo incorreto
 

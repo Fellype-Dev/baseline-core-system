@@ -1,22 +1,4 @@
-# Terceiro conjunto de avaliação — reservado, com diffs parciais.
-#
-# Os dois conjuntos anteriores (casos.yml e validacao.yml) declaram apenas
-# `codigo`, e o harness os transforma em diff de arquivo novo: toda linha é uma
-# adição, e o modelo recebe o arquivo inteiro. Nenhum deles consegue revelar
-# falha de contexto, porque contexto nunca falta neles.
-#
-# Aqui cada caso declara `codigo_base` além de `codigo`. O harness gera o diff
-# entre os dois com três linhas de contexto — o mesmo recorte que a API do
-# GitHub entrega. As edições estão posicionadas de propósito para que a janela
-# corte em pontos que mudam o julgamento.
-#
-# ATENÇÃO METODOLÓGICA: este conjunto é adversarial, não representativo. Ele
-# mede o quanto o contexto pesa quando o contexto é o fator limitante — não a
-# acurácia geral da ferramenta em Pull Requests típicos. Para não ser mero
-# exercício de confirmação, ele carrega risco nos dois sentidos: casos em que
-# a evidência da violação está dentro da janela (o corpo não pode fazer a
-# revocação cair) e casos conformes cujo corpo completo oferece iscas de
-# sobre-apontamento (o corpo pode fazer a precisão cair).
+
 
 casos:
   # ------------------------------------------------------------------

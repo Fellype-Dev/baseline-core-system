@@ -7,7 +7,7 @@ from dataclasses import asdict
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient, models
 
-from app.core.aplicabilidade import regra_se_aplica
+from app.core.applicability import regra_se_aplica
 from app.core.models import ConsultaDeRegras, RegraArquitetural
 from app.core.ports import ConhecimentoPort
 

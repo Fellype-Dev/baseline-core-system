@@ -68,6 +68,15 @@ sdd/            as regras arquiteturais da organização (a fonte da verdade)
 avaliacao/      corpus, gabarito e métricas da avaliação empírica
 ```
 
+**Convenção de nomes:** a *estrutura* fala inglês e o *domínio* fala português.
+Diretórios, módulos e a nomenclatura da arquitetura hexagonal (`Port`,
+`Adapter`, `models`, `pipeline`) seguem a convenção do ecossistema Python. Os
+identificadores — `RegraArquitetural`, `revisar_pull_request`,
+`ConhecimentoPort` — usam o vocabulário do domínio, o mesmo do SDD e do
+comentário publicado no PR. Uma linha como
+`from app.core.models import RegraArquitetural` mostra a fronteira: à esquerda
+do `import`, onde a coisa mora; à direita, o que ela é.
+
 ## O documento SDD
 
 **As regras pertencem à organização, não à ferramenta.** Cada repositório

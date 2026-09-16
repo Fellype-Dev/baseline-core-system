@@ -82,25 +82,6 @@ def descartar_regras_desconhecidas(
     ]
 
 
-# --- Conferência da linha apontada ------------------------------------------
-#
-# O sistema já não confia no modelo para dizer QUAL regra foi violada: o
-# identificador é conferido contra as regras recuperadas. Aqui a desconfiança
-# se estende a ONDE. O modelo aponta um número de linha; o sistema busca essa
-# linha no código e é ela que vai ao comentário.
-#
-# Pedir o número em vez do trecho resolve duas coisas de uma vez. O texto
-# exibido deixa de ser saída do modelo e passa a vir do repositório, o que
-# fecha uma via de injeção em vez de saneá-la. E um inteiro atravessa o JSON
-# sem quebrá-lo: quando se pedia o trecho copiado, uma linha contendo aspas
-# duplas fazia o modelo delimitar o valor com aspas simples, e a resposta
-# inteira era rejeitada — apagando o apontamento de segredo em texto claro,
-# justamente o que menos se pode perder.
-#
-# O que a conferência NÃO alcança: erro de julgamento sobre código presente.
-# Se a linha existe, o apontamento passa mesmo que a conclusão esteja errada.
-
-
 def anexar_evidencia(
     violacoes: list[Violacao],
     codigo_revisado: str,
@@ -171,13 +152,7 @@ def formatar_comentario(violacoes: list[Violacao]) -> str:
 
 
 def _formatar_evidencia(violacao: Violacao) -> str:
-    """Bloco indentado — sem cercas, que o saneamento neutralizaria.
 
-    O texto aqui veio do repositório, não do modelo, então não passa pelo
-    saneamento: recortá-lo descaracterizaria o próprio código que se quer
-    mostrar. O bloco indentado já impede que ele seja interpretado como
-    marcação no comentário.
-    """
     if not violacao.evidencia:
         return ""
     return f"    {violacao.linha} | {violacao.evidencia}"
@@ -249,17 +224,6 @@ def _candidatos_de_json(texto: str):
         yield texto[inicio : fim + 1]
 
 
-# --- Comentário do Pull Request ---------------------------------------------
-#
-# Um Pull Request de dezoito arquivos gerava dezoito blocos, quinze deles
-# repetindo "nenhuma violação encontrada". O leitor desiste antes de chegar aos
-# que importam, e o arquivo que ficou SEM avaliação se confunde com os que
-# passaram — sendo que só o primeiro exige alguém olhar.
-#
-# Daí a hierarquia: o que pede ação fica aberto, o resto fica recolhido, e as
-# duas coisas que não são a mesma (não avaliado, avaliado sem achado) ficam
-# separadas.
-
 _NAO_AVALIADO = (
     "Não foi possível obter uma avaliação do modelo para este arquivo. "
     "Um revisor humano deve olhá-lo."
@@ -272,12 +236,7 @@ def avaliar_resposta(
     codigo_revisado: str | None = None,
     linhas_ignoradas: set[int] | frozenset[int] = frozenset(),
 ) -> list[Violacao] | None:
-    """Interpreta e filtra a resposta; devolve None quando ela é ilegível.
 
-    Distinguir "ilegível" de "lista vazia" é o que permite ao núcleo saber que
-    um arquivo ficou sem avaliação. Enquanto a única saída era markdown pronto,
-    essa diferença se perdia no caminho.
-    """
     try:
         violacoes = interpretar_violacoes(resposta_llm)
     except RespostaInvalidaError:

@@ -1,21 +1,4 @@
-"""
-Autenticação como GitHub App: produz um adaptador por instalação.
 
-Um token pessoal pertence a uma pessoa e só alcança os repositórios dela. Um
-GitHub App tem identidade própria e é **instalado** por cada organização, que
-concede as permissões nos seus próprios repositórios. É o que permite atender
-repositórios de terceiros sem que ninguém precise compartilhar credenciais.
-
-A consequência para a arquitetura é que a credencial deixa de ser fixa: ela
-depende de qual instalação disparou o evento. Por isso o adaptador de
-repositório passa a ser criado por requisição, e não uma única vez na
-inicialização — mudança que acontece inteiramente no composition root, sem
-alcançar o núcleo.
-
-A troca de credenciais é feita pela própria PyGithub: a partir da chave privada
-do App ela gera o JWT, obtém o token de instalação e o renova quando expira
-(tokens de instalação valem uma hora). Não há gestão manual de expiração aqui.
-"""
 
 from github import Auth, Github
 

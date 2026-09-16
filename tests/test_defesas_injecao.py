@@ -3,7 +3,7 @@ import pytest
 
 from app.core.models import ArquivoAlterado, ElementoDeCodigo, RegraArquitetural, Violacao
 from app.services.prompt_service import montar_prompt
-from app.services.resultado_service import (
+from app.services.result_service import (
     descartar_regras_desconhecidas,
     formatar_comentario,
     montar_comentario_de_avaliacao,

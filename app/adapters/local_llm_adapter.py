@@ -51,12 +51,7 @@ class LocalLLMAdapter(LLMPort):
                 f"resposta em formato inesperado do modelo local: {dados}"
             ) from erro
 
-        # As duas checagens abaixo existem porque a falha que elas pegam já
-        # aconteceu, e passou despercebida: o executor trunca o prompt quando
-        # ele excede a janela de contexto configurada, sem avisar. A resposta
-        # volta vazia — ou, pior, coerente mas apoiada em metade do código.
-        # Sem isto, o vazio virava "não foi possível interpretar a resposta", e
-        # a causa real ficava invisível.
+
         if escolha.get("finish_reason") == "length":
             raise ErroDoModeloLocal(
                 f"a resposta do modelo '{self._modelo}' foi cortada por limite "

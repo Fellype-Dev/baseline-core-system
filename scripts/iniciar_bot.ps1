@@ -1,18 +1,8 @@
-# Sobe as tres pecas do revisor e as deixa rodando de forma independente.
-#
-# Cada peca abre a propria janela, para que o estado de todas fique visivel e
-# uma possa ser reiniciada sem derrubar as demais:
-#
+
+
 #   1. Ollama       serve o modelo de linguagem local (porta 11434)
 #   2. uvicorn      a aplicacao FastAPI que recebe o webhook (porta 8000)
 #   3. cloudflared  o tunel que publica o servico em revisor.fellypekekis.dev
-#
-# Uso: clique com o botao direito neste arquivo -> "Executar com o PowerShell"
-#      ou rode: powershell -ExecutionPolicy Bypass -File scripts\iniciar_bot.ps1
-#
-# NOTA: este arquivo e mantido em ASCII puro de proposito. O PowerShell 5.1 le
-# scripts sem marca de ordem de byte como ANSI, e acentos gravados em UTF-8
-# quebram a analise sintatica do arquivo.
 
 $ErrorActionPreference = "Stop"
 
@@ -67,7 +57,12 @@ if (Get-Process cloudflared -ErrorAction SilentlyContinue) {
     Write-Host "[3/3] Tunel ja estava no ar." -ForegroundColor Green
 } else {
     Write-Host "[3/3] Iniciando o tunel..."
-    Start-Process $CLOUDFLARED -ArgumentList "tunnel","run","revisor-arquitetural" -WindowStyle Minimized
+    # --protocol http2 em vez do QUIC padrao. O QUIC roda sobre UDP, e o Windows
+    # esgota o buffer de envio quando ha stream longo (o SSE de /eventos),
+    # derrubando a conexao com WSAENOBUFS. O tunel se recupera sozinho, mas uma
+    # entrega de webhook que caia nesse intervalo se perde: o GitHub nao repete.
+    # HTTP/2 usa TCP e nao passa por esse buffer.
+    Start-Process $CLOUDFLARED -ArgumentList "tunnel","--protocol","http2","run","revisor-arquitetural" -WindowStyle Minimized
     Start-Sleep -Seconds 10
     Write-Host "      Tunel iniciado." -ForegroundColor Green
 }

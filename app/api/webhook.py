@@ -13,17 +13,10 @@ _log = logging.getLogger(__name__)
 
 _CABECALHO_DE_ASSINATURA = "X-Hub-Signature-256"
 
-# Ação executada quando um Pull Request chega: recebe o PR, o que aconteceu com
-# ele em vocabulário do domínio, e o identificador da instalação do App que
-# originou a entrega (nulo quando a autenticação é por token pessoal). Quem
-# fornece a ação concreta é o composition root.
+
 AoReceberPullRequest = Callable[[PullRequest, str, int | None], None]
 
-# Tradução do vocabulário do GitHub para o do domínio. Uma ação sem
-# correspondência aqui não é traduzível, e por isso não atravessa o adaptador —
-# não há como falar de um `labeled` em termos de domínio. Decidir o que fazer
-# com o que É traduzível não cabe a este arquivo: `fechado` passa adiante, e é
-# o núcleo que sabe não haver revisão a fazer.
+
 _EVENTOS_DO_DOMINIO = {
     "opened": "aberto",
     "reopened": "reaberto",
@@ -79,11 +72,7 @@ def criar_router_webhook(
                 numero=payload["pull_request"]["number"],
             )
 
-            # Entregas de um GitHub App identificam a instalação que as originou,
-            # e é ela que determina com quais credenciais responder. O conceito é
-            # do GitHub, então fica aqui, no adaptador de entrada, sem alcançar o
-            # vocabulário do domínio. Entregas por token pessoal não trazem o
-            # campo, e nesse caso o valor é nulo.
+
             instalacao = (payload.get("installation") or {}).get("id")
 
             tarefas.add_task(ao_receber_pr, pr, evento, instalacao)
