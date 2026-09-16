@@ -1,13 +1,3 @@
-"""
-Adaptador do GitHub: implementa a RepositorioPort usando a biblioteca PyGithub.
-
-Este é um adaptador de SAÍDA: o núcleo o aciona para ler o Pull Request e
-publicar o comentário. Seu único papel é TRADUZIR entre o mundo do GitHub
-(objetos da PyGithub) e o vocabulário do domínio (PullRequest, ArquivoAlterado).
-
-Repare na direção dos imports: este arquivo importa do núcleo (`app.core`), mas
-o núcleo nunca importa daqui. A dependência aponta para dentro.
-"""
 
 from github import Auth, Github, GithubException
 
@@ -35,20 +25,13 @@ def _diretorios_de(caminho: str) -> set[str]:
 class GitHubAdapter(RepositorioPort):
 
     def __init__(self, token: str | None = None, *, cliente: Github | None = None) -> None:
-        """Cria o adaptador a partir de um token OU de um cliente já autenticado.
 
-        As duas formas existem porque há duas maneiras de autenticar no GitHub.
-        Com token pessoal, o adaptador monta o cliente sozinho. Com GitHub App, a
-        credencial depende de qual instalação disparou o evento, e o cliente é
-        montado fora — pela fábrica, que sabe fazer essa troca.
-        """
         if cliente is not None:
             self._cliente = cliente
         elif token is not None:
             self._cliente = Github(auth=Auth.Token(token))
         else:
             raise ValueError(
-                "informe um token ou um cliente já autenticado para criar o adaptador"
             )
 
     def obter_arquivos_alterados(self, pr: PullRequest) -> list[ArquivoAlterado]:
@@ -138,15 +121,7 @@ class GitHubAdapter(RepositorioPort):
             return None
 
     def publicar_revisao(self, pr: PullRequest, texto: str) -> None:
-        """Realiza no GitHub o "no máximo uma revisão" que a porta exige.
 
-        A plataforma não tem o conceito de revisão substituível, então ele é
-        construído aqui: um comentário de issue que é reescrito a cada
-        publicação. A marca invisível no início do corpo é o que permite
-        reencontrá-lo entre os demais comentários do Pull Request. O autor não
-        serviria para isso — ele muda conforme a autenticação seja por App ou
-        por token pessoal.
-        """
         corpo = f"{_MARCA_DA_REVISAO}\n{texto}"
         repositorio = self._cliente.get_repo(pr.repositorio)
         pull_request = repositorio.get_pull(pr.numero)

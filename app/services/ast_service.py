@@ -61,14 +61,7 @@ class _ColetorDeElementos(ast.NodeVisitor):
 
 
 def _primeira_linha(node) -> int:
-    """Onde o elemento realmente começa, contando os decoradores.
 
-    A AST aponta `lineno` para a palavra `def`/`class`, deixando os decoradores
-    de fora. Mas o decorador faz parte do elemento e costuma ser justamente o
-    que interessa a uma revisão arquitetural — `@router.post` diz que a função
-    é um ponto de entrada HTTP. Sem ele, o elemento chega incompleto a quem
-    julga.
-    """
     decoradores = getattr(node, "decorator_list", [])
     if not decoradores:
         return node.lineno
@@ -84,19 +77,7 @@ def extrair_esqueleto(codigo: str) -> list[ElementoDeCodigo]:
 
 
 def linhas_de_texto_literal(codigo: str) -> set[int]:
-    """Linhas que são continuação de um literal de texto de várias linhas.
 
-    Um arquivo guarda código como DADO com frequência — fixtures de teste,
-    exemplos em docstring, gabaritos. Julgar essas linhas como se fossem
-    código do arquivo produz apontamento sobre algo que não executa: foi
-    assim que um `pass` dentro de uma string de teste virou "exceção
-    silenciada".
-
-    A PRIMEIRA linha do literal fica de fora de propósito. É nela que mora um
-    segredo escrito no código (`API_KEY = "sk-..."`), e essa é uma violação
-    real que precisa continuar sendo apontada. Só as linhas de continuação
-    são, necessariamente, conteúdo e não instrução.
-    """
     try:
         arvore = ast.parse(codigo)
     except SyntaxError:

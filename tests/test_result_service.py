@@ -2,7 +2,7 @@
 import pytest
 
 from app.core.models import Violacao
-from app.services.resultado_service import (
+from app.services.result_service import (
     RespostaInvalidaError,
     anexar_evidencia,
     formatar_comentario,
@@ -220,7 +220,7 @@ def test_sem_codigo_revisado_a_conferencia_nao_e_aplicada():
 # ficavam indistinguíveis dos que passaram.
 
 from app.core.models import ResultadoDoArquivo  # noqa: E402
-from app.services.resultado_service import (  # noqa: E402
+from app.services.result_service import (  # noqa: E402
     avaliar_resposta,
     montar_comentario_do_pr,
 )

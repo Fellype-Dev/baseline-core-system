@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.core.aplicabilidade import regra_se_aplica
+from app.core.applicability import regra_se_aplica
 from app.core.models import ConsultaDeRegras, RegraArquitetural
 
 

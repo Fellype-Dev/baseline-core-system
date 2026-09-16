@@ -9,7 +9,7 @@ from app.core.models import (
     RegraArquitetural,
     ResultadoDoArquivo,
 )
-from app.core.observador import ObservadorNulo
+from app.core.observer import ObservadorNulo
 from app.core.ports import (
     ConhecimentoPort,
     LLMPort,
@@ -24,7 +24,7 @@ from app.services.ast_service import (
 )
 from app.services.diff_service import linhas_alteradas
 from app.services.prompt_service import montar_prompt, montar_prompt_de_estrutura
-from app.services.resultado_service import (
+from app.services.result_service import (
     avaliar_resposta,
     formatar_erro_de_sintaxe,
     montar_comentario_de_avaliacao,
@@ -35,20 +35,12 @@ from app.services.sdd_service import ErroDeSDD, interpretar_sdd
 _log = logging.getLogger(__name__)
 
 
-# O que o produto considera motivo para revisar. Mora no núcleo porque é decisão
-# de produto: mudar de ideia sobre quando revisar não pode exigir alterar quem
-# fala o protocolo do GitHub. Um Pull Request fechado chega até aqui e é
-# recusado nesta linha, e não numa condição escondida no adaptador de entrada.
+
 EVENTOS_QUE_PEDEM_REVISAO = frozenset({"aberto", "reaberto", "atualizado"})
 
 
 def merece_revisao(evento: str) -> bool:
-    """Diz se o que aconteceu com o Pull Request pede uma revisão nova.
 
-    Revisar de novo a cada push é o que fecha o ciclo: sem isso a ferramenta
-    aponta uma vez, na abertura, e nunca verifica a correção que ela mesma
-    provocou.
-    """
     return evento in EVENTOS_QUE_PEDEM_REVISAO
 
 
@@ -79,8 +71,6 @@ def analisar_pull_request(
 
     observador = observador or ObservadorNulo()
 
-    # As regras vêm do repositório revisado, e não da ferramenta: cada
-    # organização declara as suas, versionadas junto ao próprio código.
     regras = _carregar_regras_do_repositorio(pr, repositorio, conhecimento, observador)
     if regras is None:
         return (
@@ -204,12 +194,7 @@ def _revisar_arquivo(
     llm: LLMPort,
     observador: ObservadorPort,
 ) -> ResultadoDoArquivo | None:
-    """O que a revisão apurou sobre este arquivo, ou None se não houve o que ver.
 
-    Devolve estrutura, e não texto formatado: é o que permite ao chamador
-    resumir o Pull Request inteiro — separar o que pede ação do que não pede
-    exige saber o que aconteceu, não ler o markdown que descreve.
-    """
     linguagem = identificar_linguagem(arquivo.caminho)
 
 

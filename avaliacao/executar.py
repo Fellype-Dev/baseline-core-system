@@ -18,7 +18,7 @@ from app.services.ast_service import (  # noqa: E402
 )
 from app.services.diff_service import linhas_alteradas  # noqa: E402
 from app.services.prompt_service import montar_prompt  # noqa: E402
-from app.services.resultado_service import (  # noqa: E402
+from app.services.result_service import (  # noqa: E402
     RespostaInvalidaError,
     anexar_evidencia,
     descartar_regras_desconhecidas,
@@ -36,18 +36,14 @@ CAMINHO_DOS_CASOS = RAIZ / "avaliacao" / "casos.yml"
 CORPUS = {
     "casos": RAIZ / "avaliacao" / "casos.yml",
     "validacao": RAIZ / "avaliacao" / "validacao.yml",
-    # Terceiro conjunto, reservado. Os dois primeiros já foram medidos e não
-    # servem mais para sustentar número novo. Além disso, só este traz diffs
-    # parciais — os anteriores entregam o arquivo inteiro ao modelo e por isso
-    # não conseguem revelar falha de contexto.
+
     "contexto": RAIZ / "avaliacao" / "contexto.yml",
 }
 
 PAUSA_PADRAO_EM_SEGUNDOS = 7.0
 TENTATIVAS_POR_CASO = 4
 
-# Quantas linhas de contexto o GitHub coloca em volta de cada alteração. É esse
-# número, e não o tamanho do arquivo, que decide o que o modelo consegue ver.
+
 CONTEXTO_DO_GITHUB = 3
 
 
@@ -57,29 +53,14 @@ def carregar_casos(caminho: Path = CAMINHO_DOS_CASOS) -> list[dict]:
 
 
 def montar_diff(codigo: str) -> str:
-    """Diff de arquivo recém-criado: cada linha é uma adição.
 
-    Serve para os casos que declaram só `codigo` — arquivo novo, em que o diff
-    de fato contém tudo. Note que esse formato entrega o arquivo inteiro ao
-    modelo, e portanto NÃO exercita corte de contexto. Casos que precisam disso
-    declaram `codigo_base` e caem em `montar_diff_parcial`.
-    """
     linhas = codigo.splitlines()
     cabecalho = f"@@ -0,0 +1,{len(linhas)} @@"
     return "\n".join([cabecalho] + [f"+{linha}" for linha in linhas])
 
 
 def montar_diff_parcial(base: str, modificado: str) -> str:
-    """Diff de alteração, no mesmo formato que o GitHub entrega.
 
-    Este é o caminho que importa medir: em um Pull Request real a ferramenta
-    quase nunca recebe o arquivo inteiro, e sim hunks com três linhas de
-    contexto. O recorte é cego ao significado do código e pode terminar no
-    meio de um bloco — foi assim que nasceu um falso positivo em produção.
-
-    A API do GitHub devolve o `patch` sem os cabeçalhos `---`/`+++`, que são
-    descartados aqui pelo mesmo motivo: medir o formato que chega de verdade.
-    """
     linhas = difflib.unified_diff(
         base.splitlines(keepends=True),
         modificado.splitlines(keepends=True),
@@ -121,9 +102,7 @@ def avaliar_caso(
                 arquivo.conteudo, linhas_alteradas(arquivo.diff)
             )
         except SyntaxError as erro:
-            # Silenciar aqui degradaria a medição sem deixar rastro: o caso
-            # seria avaliado só pelo diff, e o resultado pior apareceria como
-            # limitação do modelo em vez de erro no corpus.
+
             print(
                 f"    AVISO: '{caso['nome']}' tem código inválido "
                 f"({erro.msg}); avaliado apenas pelo diff"
@@ -155,9 +134,7 @@ def avaliar_caso(
         print(f"    AVISO: resposta ilegível do modelo em '{caso['nome']}'")
         return frozenset()
 
-    # O mesmo filtro que a produção aplica antes de publicar o comentário. Sem
-    # ele a medição descreveria um sistema que o usuário nunca vê: regras
-    # inventadas pelo modelo entrariam na conta como se fossem apontamentos.
+
     violacoes = descartar_regras_desconhecidas(
         violacoes, frozenset(regra.identificador for regra in regras)
     )
@@ -209,10 +186,7 @@ def _montar_dependencias(motor: str, caminho_dados: str):
 
     conhecimento = QdrantAdapter(caminho_dados=caminho_dados)
 
-    # As regras vêm do `sdd/` versionado, e não do que estiver no índice. Sem
-    # isso a medição dependeria do estado em que o banco por acaso estivesse, e
-    # duas execuções da mesma configuração poderiam divergir sem explicação.
-    # O repositório vazio corresponde à coleção que o harness consulta.
+
     regras = carregar_sdd(RAIZ / "sdd")
     conhecimento.sincronizar_regras("", regras)
     print(f"Índice preparado: {len(regras)} regra(s) ativa(s) de sdd/.\n")

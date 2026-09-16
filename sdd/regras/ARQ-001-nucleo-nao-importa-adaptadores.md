@@ -12,31 +12,19 @@ excecoes: []
 
 ## Regra
 
-Módulos do núcleo não podem importar adaptadores concretos nem bibliotecas de
-acesso a rede, banco de dados ou APIs externas.
+Módulos do núcleo não podem importar adaptadores concretos nem bibliotecas de acesso a rede, banco de dados ou APIs externas.
 
-O núcleo depende de suas próprias abstrações (portas), de seus modelos de
-domínio e dos filtros puros do próprio pipeline, em `app/services/`. Esses
-filtros são lógica, não infraestrutura: não abrem conexão, não leem arquivo e
-não falam com serviço externo algum. O critério é o acesso ao mundo de fora, e
-não o diretório em que o módulo mora.
+O núcleo depende de suas próprias abstrações (portas), de seus modelos de domínio e dos filtros puros do próprio pipeline, em `app/services/`. Esses filtros são lógica, não infraestrutura: não abrem conexão, não leem arquivo e não falam com serviço externo algum. O critério é o acesso ao mundo de fora, e não o diretório em que o módulo mora.
 
 ## Motivação
 
-A dependência precisa apontar sempre para dentro: adaptadores conhecem o núcleo,
-o núcleo nunca conhece os adaptadores. Isso permite substituir uma tecnologia
-sem alterar regra de negócio, e torna o núcleo testável sem infraestrutura.
-Quando o núcleo importa um adaptador, essa substituição deixa de ser possível e
-os testes passam a exigir rede ou banco.
+A dependência precisa apontar sempre para dentro: adaptadores conhecem o núcleo, o núcleo nunca conhece os adaptadores. Isso permite substituir uma tecnologia sem alterar regra de negócio, e torna o núcleo testável sem infraestrutura. Quando o núcleo importa um adaptador, essa substituição deixa de ser possível e os testes passam a exigir rede ou banco.
 
 ## Como identificar
 
-Em arquivos sob o diretório do núcleo, procure imports de módulos de adaptadores
-ou de bibliotecas de entrada e saída (clientes HTTP, SDKs de nuvem, drivers de
-banco).
+Em arquivos sob o diretório do núcleo, procure imports de módulos de adaptadores ou de bibliotecas de entrada e saída (clientes HTTP, SDKs de nuvem, drivers de banco).
 
-Imports de `app/core/**` e de `app/services/**` são internos ao núcleo e não
-violam esta regra.
+Imports de `app/core/**` e de `app/services/**` são internos ao núcleo e não violam esta regra.
 
 ## Exemplo incorreto
 

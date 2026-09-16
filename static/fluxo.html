@@ -5,7 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Revisor Arquitetural — Fluxo em tempo real</title>
   <style>
+    /* Claro por padrão: em projetor, fundo escuro lava e o texto some.
+       O escuro continua disponível com ?tema=escuro na URL. */
     :root {
+      --fundo: #f6f7f9;
+      --carta: #ffffff;
+      --borda: #d9dde5;
+      --texto: #1c2130;
+      --apagado: #6b7280;
+      --ativo: #2563eb;
+      --pronto: #16a34a;
+      --falha: #dc2626;
+      --realce: rgba(0, 0, 0, 0.04);
+    }
+
+    html[data-tema="escuro"] {
       --fundo: #0f1117;
       --carta: #171a23;
       --borda: #262b38;
@@ -14,6 +28,7 @@
       --ativo: #3b82f6;
       --pronto: #22c55e;
       --falha: #ef4444;
+      --realce: rgba(255, 255, 255, 0.06);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -116,10 +131,16 @@
     #registro .rotulo { color: var(--ativo); flex-shrink: 0; width: 6.5rem; }
     #registro .erro .rotulo { color: var(--falha); }
     #registro code {
-      background: rgba(255,255,255,0.06); padding: 0.05rem 0.3rem;
+      background: var(--realce); padding: 0.05rem 0.3rem;
       border-radius: 3px;
     }
   </style>
+  <script>
+    // Antes de o corpo pintar, para não piscar: ?tema=escuro liga o tema escuro.
+    if (new URLSearchParams(location.search).get("tema") === "escuro") {
+      document.documentElement.dataset.tema = "escuro";
+    }
+  </script>
 </head>
 <body>
   <header>

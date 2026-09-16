@@ -13,22 +13,15 @@ excecoes: []
 
 ## Regra
 
-A responsabilidade de um adaptador é traduzir entre o mundo externo e o
-vocabulário do domínio. Decisões de negócio, cálculos e validações que definem o
-comportamento do produto pertencem ao núcleo.
+A responsabilidade de um adaptador é traduzir entre o mundo externo e o vocabulário do domínio. Decisões de negócio, cálculos e validações que definem o comportamento do produto pertencem ao núcleo.
 
 ## Motivação
 
-Um adaptador que decide o que o sistema faz, e não apenas como ele se comunica,
-acumula responsabilidade indevida. A regra de negócio fica presa a uma
-tecnologia, deixa de ser reaproveitável e só pode ser testada com a
-infraestrutura ligada.
+Um adaptador que decide o que o sistema faz, e não apenas como ele se comunica, acumula responsabilidade indevida. A regra de negócio fica presa a uma tecnologia, deixa de ser reaproveitável e só pode ser testada com a infraestrutura ligada.
 
 ## Como identificar
 
-Em adaptadores, procure condicionais que decidam comportamento do produto,
-montagem de prompts, cálculos de domínio ou validações de negócio — em vez de
-apenas conversão de formatos e chamadas ao serviço externo.
+Em adaptadores, procure condicionais que decidam comportamento do produto, montagem de prompts, cálculos de domínio ou validações de negócio — em vez de apenas conversão de formatos e chamadas ao serviço externo.
 
 ## Exemplo incorreto
 
