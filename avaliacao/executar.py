@@ -198,9 +198,9 @@ def _montar_dependencias(motor: str, caminho_dados: str):
             api_key=config.GEMINI_API_KEY, modelo=config.GEMINI_MODEL
         )
     else:
-        from app.adapters.local_llm_adapter import LocalLLMAdapter
+        from app.adapters.llm_http_adapter import LLMHttpAdapter
 
-        llm = LocalLLMAdapter(
+        llm = LLMHttpAdapter(
             modelo=config.LLM_LOCAL_MODELO, url=config.LLM_LOCAL_URL
         )
 
