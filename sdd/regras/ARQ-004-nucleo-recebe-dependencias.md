@@ -30,7 +30,7 @@ import os
 
 def revisar(pr: PullRequest) -> None:
     if os.getenv("USAR_MODELO_LOCAL"):
-        llm = LocalLLMAdapter()
+        llm = LLMHttpAdapter()
     else:
         llm = GeminiAdapter(api_key=os.environ["GEMINI_API_KEY"])
     avaliar(pr, llm)

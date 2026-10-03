@@ -7,7 +7,7 @@ from fastapi import FastAPI
 import config
 from app.adapters.github_adapter import GitHubAdapter
 from app.adapters.github_app import FabricaDeGitHub
-from app.adapters.local_llm_adapter import LocalLLMAdapter
+from app.adapters.llm_http_adapter import LLMHttpAdapter
 from app.adapters.qdrant_adapter import QdrantAdapter
 from app.adapters.sse_adapter import ObservadorSSE
 from app.api.events import criar_router_eventos
@@ -22,7 +22,9 @@ config.validar_configuracao()
 
 conhecimento = QdrantAdapter()
 
-llm = LocalLLMAdapter(modelo=config.LLM_LOCAL_MODELO, url=config.LLM_LOCAL_URL)
+llm = LLMHttpAdapter(
+    modelo=config.LLM_MODELO, url=config.LLM_URL, chave=config.LLM_CHAVE
+)
 
 observador = ObservadorSSE()
 

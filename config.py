@@ -46,10 +46,23 @@ GEMINI_MODEL = "gemini-2.5-flash"
 # `marvin` é o gpt-oss:20b com a janela de contexto ampliada — veja o Modelfile
 # na raiz do projeto e o porquê documentado nele. Apontar direto para
 # `gpt-oss:20b` funciona, mas trunca prompts de arquivos grandes em silêncio.
-LLM_LOCAL_MODELO = os.getenv("LLM_LOCAL_MODELO", "marvin")
-LLM_LOCAL_URL = os.getenv(
+#
+# Os nomes antigos (LLM_LOCAL_*) continuam valendo: o `.env` de quem já tinha o
+# projeto configurado não precisa ser reescrito. O "LOCAL" saiu porque deixou de
+# ser verdade — a mesma configuração aponta para um executor nesta máquina ou
+# para um provedor que hospeda modelos abertos.
+LLM_MODELO = os.getenv("LLM_MODELO") or os.getenv("LLM_LOCAL_MODELO", "marvin")
+LLM_URL = os.getenv("LLM_URL") or os.getenv(
     "LLM_LOCAL_URL", "http://localhost:11434/v1/chat/completions"
 )
+
+# Só existe quando o modelo é hospedado por terceiro. Vazia, o adaptador não
+# manda cabeçalho de autenticação — que é o que um executor local espera.
+LLM_CHAVE = os.getenv("LLM_CHAVE")
+
+# Nomes anteriores, para quem ainda os importa.
+LLM_LOCAL_MODELO = LLM_MODELO
+LLM_LOCAL_URL = LLM_URL
 
 
 def validar_configuracao() -> None:

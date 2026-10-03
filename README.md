@@ -51,7 +51,7 @@ contrário. A dependência aponta sempre para dentro: `app/adapters` importa de
 |---|---|---|
 | `RepositorioPort` | ler o PR e publicar feedback | `GitHubAdapter` |
 | `ConhecimentoPort` | recuperar as regras aplicáveis | `QdrantAdapter` |
-| `LLMPort` | avaliar um texto | `LocalLLMAdapter`, `GeminiAdapter` |
+| `LLMPort` | avaliar um texto | `LLMHttpAdapter`, `GeminiAdapter` |
 | `ObservadorPort` | anunciar o progresso | `ObservadorSSE` |
 
 O benefício deixou de ser teórico: a migração do Gemini (usado como andaime

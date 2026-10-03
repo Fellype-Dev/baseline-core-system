@@ -1,6 +1,10 @@
-﻿# Ambiente EXATO usado para produzir os resultados do trabalho.
+# Ambiente EXATO usado para produzir os resultados do trabalho.
 # Gerado com 'pip freeze' — inclui as dependencias transitivas.
 # Reproduzir com: pip install -r requirements.lock.txt
+#
+# Gerado no Windows. Os pacotes exclusivos dessa plataforma levam marcador
+# de ambiente, para que o mesmo arquivo instale em Linux — onde o sistema
+# e implantado — sem precisar de um lock por sistema operacional.
 
 annotated-doc==0.0.4
 annotated-types==0.7.0
@@ -60,7 +64,7 @@ PyNaCl==1.6.2
 pyparsing==3.3.2
 pytest==9.1.1
 python-dotenv==1.2.2
-pywin32==312
+pywin32==312; sys_platform == "win32"
 PyYAML==6.0.3
 qdrant-client==1.18.0
 requests==2.34.2
@@ -74,4 +78,4 @@ urllib3==2.7.0
 uvicorn==0.51.0
 watchfiles==1.2.0
 websockets==16.1.1
-win32_setctime==1.2.0
+win32_setctime==1.2.0; sys_platform == "win32"

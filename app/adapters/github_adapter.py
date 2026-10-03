@@ -32,6 +32,7 @@ class GitHubAdapter(RepositorioPort):
             self._cliente = Github(auth=Auth.Token(token))
         else:
             raise ValueError(
+                "informe um token ou um cliente já autenticado para criar o adaptador"
             )
 
     def obter_arquivos_alterados(self, pr: PullRequest) -> list[ArquivoAlterado]:
