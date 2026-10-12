@@ -1,0 +1,28 @@
+# Variante reduzida, para hospedagem com pouca memória.
+#
+# O `Modelfile` da raiz deriva do gpt-oss:20b, que é o modelo escolhido por
+# medição. Ele ocupa 13 GB de pesos e exige uma máquina de 16 GB ou mais.
+#
+# Em junho de 2026 a Oracle cortou a camada gratuita de ARM de 4 OCPUs e 24 GB
+# para 2 OCPUs e 12 GB, e passou a derrubar instâncias acima disso em agosto.
+# Nos 12 GB não cabe nem o gpt-oss:20b nem o qwen2.5-coder:14b — este último
+# tem 48 camadas com cabeças de 128 dimensões, e o cache de atenção dele é
+# quase quatro vezes maior que o do gpt-oss, apesar de pesar menos em disco.
+#
+# Este arquivo existe para a implantação gratuita. O custo de qualidade está
+# medido na Seção de resultados do trabalho, contra os outros dois modelos no
+# mesmo corpus e no mesmo SDD.
+#
+#   ollama create marvin-7b -f Modelfile.7b
+#   LLM_MODELO=marvin-7b
+#
+# O `num_ctx` tem o mesmo motivo documentado no Modelfile principal: o Ollama
+# executa com 4096 por padrão e TRUNCA EM SILÊNCIO o que passar disso. O
+# endpoint compatível com a OpenAI não aceita o parâmetro na requisição, então
+# o ajuste precisa morar no modelo. 16384 está dentro da janela nativa deste
+# modelo e cobre o maior prompt que a ferramenta monta.
+
+FROM qwen2.5-coder:7b
+
+PARAMETER num_ctx 16384
+PARAMETER temperature 0

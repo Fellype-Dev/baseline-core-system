@@ -13,6 +13,10 @@
 #
 #   ollama create marvin -f Modelfile
 #
+# Exige máquina de 16 GB ou mais: são 13 GB de pesos. Para hospedagem com menos
+# memória existe o `Modelfile.7b`, que deriva de um modelo de 7 B e cabe em
+# 12 GB — o custo de qualidade está medido na Seção de resultados.
+#
 # 16384 cobre com folga o maior prompt que a ferramenta monta (o limite de
 # alerta é de 32000 caracteres, algo em torno de 9000 tokens) e ainda deixa
 # espaço para a resposta, sem inflar o cache de atenção a ponto de expulsar o
